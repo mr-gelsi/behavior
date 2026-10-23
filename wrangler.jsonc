@@ -17,7 +17,7 @@
     {
       "binding": "DB",
       "database_name": "behavior-tracker",
-      "database_id": 3a44891d-2bcd-4639-9e2b-a86edbd3890a,
+      "database_id": "3a44891d-2bcd-4639-9e2b-a86edbd3890a",
       "migrations_dir": "migrations"
     }
   ],
