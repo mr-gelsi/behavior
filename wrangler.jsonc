@@ -1,0 +1,33 @@
+{
+  // Cloudflare Worker + static assets + D1 database.
+  // After you create the database (see README), paste its ID below.
+  // The database ID is an identifier, not a secret.
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "behavior-tracker",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": {
+    "directory": "./public",
+    "binding": "ASSETS",
+    // Every request goes through the Worker first so security headers
+    // and login checks apply to all responses.
+    "run_worker_first": true
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "behavior-tracker",
+      "database_id": "REPLACE_WITH_YOUR_D1_DATABASE_ID",
+      "migrations_dir": "migrations"
+    }
+  ],
+  "triggers": {
+    // Hourly: closes Rewards Day booking on time, auto-assigns non-qualifiers,
+    // and cleans out expired sessions.
+    "crons": ["0 * * * *"]
+  },
+  "vars": {
+    "TIMEZONE": "America/Los_Angeles"
+  },
+  "observability": { "enabled": true }
+}
