@@ -1,6 +1,6 @@
 import { add } from '../router.js';
 import { all, one, run, st, batch, chunked, audit, getSettings } from '../lib/db.js';
-import { V, bad, HttpError, isDate, schoolYearOf, toCsv, json } from '../lib/util.js';
+import { V, bad, HttpError, isDate, schoolYearOf, toCsv, json, nameFromBody } from '../lib/util.js';
 import { hashPassword, hashPin, randomPin } from '../lib/crypto.js';
 import { endAllSessions, clearFailures } from '../lib/auth.js';
 
@@ -74,17 +74,19 @@ add('PUT', '/api/admin/settings', 'admin', async (c) => {
 // ---- Staff users ------------------------------------------------------------------------
 
 add('GET', '/api/admin/users', 'admin', async ({ env }) => ({
-  users: await all(env, 'SELECT id, email, name, role, active, created_at FROM users ORDER BY active DESC, name'),
+  users: await all(env,
+    `SELECT id, email, name, last_name, role, active, created_at FROM users
+      ORDER BY active DESC, lower(COALESCE(last_name, name)), lower(name)`),
 }));
 add('POST', '/api/admin/users', 'admin', async (c) => {
   const email = V.str(c.body.email, 'Email', { max: 120 }).toLowerCase();
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Enter a valid email address.');
-  const name = V.str(c.body.name, 'Name', { max: 80 });
+  const { name, last_name: lastName } = nameFromBody(c.body, null);
   const role = V.oneOf(c.body.role, 'Role', ['admin', 'teacher']);
   const password = V.str(c.body.password, 'Password', { max: 200 });
   if (password.length < 12) throw bad('Password must be at least 12 characters.');
   if (await one(c.env, 'SELECT 1 AS x FROM users WHERE email = ?', email)) throw bad('A user with that email already exists.');
-  await run(c.env, 'INSERT INTO users (email, name, role, pw_hash) VALUES (?,?,?,?)', email, name, role, await hashPassword(password, c.env));
+  await run(c.env, 'INSERT INTO users (email, name, last_name, role, pw_hash) VALUES (?,?,?,?,?)', email, name, lastName, role, await hashPassword(password, c.env));
   await audit(c.env, c.actor, 'user.create', `${email} ${role}`);
   return { ok: true };
 });
@@ -92,7 +94,7 @@ add('PATCH', '/api/admin/users/:id', 'admin', async (c) => {
   const id = V.int(c.params.id, 'id', { min: 1 });
   const u = await one(c.env, 'SELECT * FROM users WHERE id = ?', id);
   if (!u) throw new HttpError(404, 'User not found.');
-  const name = V.str(c.body.name ?? u.name, 'Name', { max: 80 });
+  const { name, last_name: lastName } = nameFromBody(c.body, u);
   const role = V.oneOf(c.body.role ?? u.role, 'Role', ['admin', 'teacher']);
   const active = (c.body.active ?? u.active) ? 1 : 0;
   if ((u.role === 'admin' && (role !== 'admin' || !active)) ) {
@@ -105,7 +107,7 @@ add('PATCH', '/api/admin/users/:id', 'admin', async (c) => {
     if (pw.length < 12) throw bad('Password must be at least 12 characters.');
     hash = await hashPassword(pw, c.env);
   }
-  await run(c.env, 'UPDATE users SET name=?, role=?, active=?, pw_hash=? WHERE id=?', name, role, active, hash, id);
+  await run(c.env, 'UPDATE users SET name=?, last_name=?, role=?, active=?, pw_hash=? WHERE id=?', name, lastName, role, active, hash, id);
   if (!active || c.body.password || role !== u.role) {
     await endAllSessions(c.env, 'staff', id);
     await clearFailures(c.env, `staff:${u.email}`);

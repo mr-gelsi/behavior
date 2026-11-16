@@ -17,7 +17,7 @@ function itemFields(body, existing = {}) {
 
 add('GET', '/api/store/items', 'staff', async ({ env, user }) => {
   const rows = await all(env,
-    `SELECT i.*, u.name AS owner_name FROM store_items i LEFT JOIN users u ON u.id = i.owner_id
+    `SELECT i.*, u.name AS owner_name, u.last_name AS owner_last_name FROM store_items i LEFT JOIN users u ON u.id = i.owner_id
       WHERE (? = 1 OR i.owner_id IS NULL OR i.owner_id = ?) ORDER BY i.active DESC, i.price, i.name`,
     user.role === 'admin' ? 1 : 0, user.id);
   const used = await all(env,

@@ -249,3 +249,17 @@ export async function loadCategories() {
   if (!state.categories) state.categories = (await api('/p5/categories')).categories;
   return state.categories;
 }
+
+// Staff names are stored as a full name plus a last name, so lists can show and sort by last name.
+export function lastFirst(name, last) {
+  const n = String(name || '').trim();
+  const l = String(last || '').trim();
+  if (!l || !n.endsWith(l)) return n;
+  const first = n.slice(0, n.length - l.length).trim();
+  return first ? `${l}, ${first}` : l;
+}
+export function firstOf(name, last) {
+  const n = String(name || '').trim();
+  const l = String(last || '').trim();
+  return l && n.endsWith(l) ? n.slice(0, n.length - l.length).trim() : n;
+}

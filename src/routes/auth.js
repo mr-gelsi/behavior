@@ -1,6 +1,6 @@
 import { add } from '../router.js';
 import { all, one, run, audit, getSettings } from '../lib/db.js';
-import { HttpError, V, bad, todayStr, schoolYearOf } from '../lib/util.js';
+import { HttpError, V, bad, todayStr, schoolYearOf, lastNameOf } from '../lib/util.js';
 import { hashPassword, verifyPassword, verifyPin, constantTimeStringEqual } from '../lib/crypto.js';
 import {
   startSession, sessionCookie, clearedCookie, endSession, endAllSessions,
@@ -34,7 +34,7 @@ add('POST', '/api/setup', 'none', async ({ env, body, ip }) => {
   const password = V.str(body.password, 'Password', { max: 200 });
   if (password.length < 12) throw bad('Password must be at least 12 characters.');
   const hash = await hashPassword(password, env);
-  await run(env, "INSERT INTO users (email, name, role, pw_hash) VALUES (?,?, 'admin', ?)", email, name, hash);
+  await run(env, "INSERT INTO users (email, name, last_name, role, pw_hash) VALUES (?,?,?, 'admin', ?)", email, name, lastNameOf(name), hash);
   await audit(env, `staff:${email}`, 'setup.first_admin', '');
   return { ok: true };
 });

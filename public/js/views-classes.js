@@ -1,5 +1,5 @@
 import {
-  state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, studentPicker, loadCategories, fmtDate,
+  state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, studentPicker, loadCategories, fmtDate, lastFirst,
 } from './core.js';
 import { itemForm } from './views-p5.js';
 
@@ -14,20 +14,62 @@ const shortName = (m) => `${m.first_name} ${m.last_name.charAt(0)}.`;
 // ======================================================================================
 // Staff: list of classes
 // ======================================================================================
+const cmp = (a, b) => String(a ?? '').localeCompare(String(b ?? ''), undefined, { sensitivity: 'base', numeric: true });
+// Periods like "1", "2", "10" sort as numbers; text periods next; classes without a period last.
+const periodKey = (p) => { if (!p) return [2, 0, '']; const n = parseFloat(p); return Number.isNaN(n) ? [1, 0, p] : [0, n, '']; };
+const cmpPeriod = (a, b) => { const x = periodKey(a), y = periodKey(b); return x[0] - y[0] || x[1] - y[1] || cmp(x[2], y[2]); };
+function sortClasses(list, key) {
+  const teacher = (a, b) => cmp(a.owner_last_name || a.owner_name, b.owner_last_name || b.owner_name) || cmp(a.owner_name, b.owner_name);
+  const out = [...list];
+  if (key === 'teacher') out.sort((a, b) => teacher(a, b) || cmpPeriod(a.period, b.period) || cmp(a.name, b.name));
+  else if (key === 'name') out.sort((a, b) => cmp(a.name, b.name) || cmpPeriod(a.period, b.period) || teacher(a, b));
+  else out.sort((a, b) => cmpPeriod(a.period, b.period) || cmp(a.name, b.name) || teacher(a, b));
+  return out;
+}
+
 export async function classesList(el) {
   loading(el);
-  const arch = !!state.showArchivedClasses;
-  const { classes } = await api('/classes?archived=' + (arch ? 1 : 0));
   const admin = state.me.user.role === 'admin';
-  mount(el, h`
-    <div class="page-head"><div><h1>\ud83c\udfeb My classes</h1><p class="muted">Each class has a code students type in to join. Open a class for its seating chart.</p></div>
-      <div class="actions"><label class="check"><input type="checkbox" id="arch" ${arch ? raw('checked') : ''}> Show archived</label><button class="btn primary" id="new">New class</button></div></div>
-    ${classes.length ? h`<div class="class-grid">${classes.map((c) => h`<div class="class-card ${c.archived ? 'archived' : ''}">
-      <div><strong class="fs18">${c.name}</strong><div class="muted small">${[c.period ? 'Period ' + c.period : '', c.school_year, admin ? c.owner_name : ''].filter(Boolean).join(' \u2022 ')}</div></div>
+  const v = state.classView || (state.classView = { owner: 'me', sort: 'period' });
+  if (!admin) v.owner = 'me';
+  const arch = !!state.showArchivedClasses;
+  const data = await api(`/classes?archived=${arch ? 1 : 0}&owner=${encodeURIComponent(v.owner)}`);
+  const others = admin && v.owner !== 'me';
+  if (v.sort === 'teacher' && !others) v.sort = 'period';
+  const classes = sortClasses(data.classes, v.sort);
+  const card = (c) => h`<div class="class-card ${c.archived ? 'archived' : ''}">
+      <div><strong class="fs18">${c.name}</strong><div class="muted small">${[c.period ? 'Period ' + c.period : '', c.school_year, others && v.sort !== 'teacher' ? lastFirst(c.owner_name, c.owner_last_name) : ''].filter(Boolean).join(' \u2022 ')}</div></div>
       <div class="row"><span class="chip gray">${c.members} student${c.members === 1 ? '' : 's'}</span><span class="chip ${c.join_open && !c.archived ? 'ok' : 'gray'}">${c.archived ? 'Archived' : c.join_open ? 'Joining open' : 'Joining closed'}</span></div>
       <div class="code-box"><span class="code">${c.code}</span><button class="btn small" data-copy="${c.code}">Copy</button></div>
-      <div class="row"><a class="btn primary" href="#/class/${c.id}">Open</a></div></div>`)}</div>`
-      : h`<div class="card"><div class="empty"><strong>${arch ? 'No classes yet' : 'No active classes yet'}</strong>Create a class, give students its code, then set up your seating chart.</div></div>`}`);
+      <div class="row"><a class="btn primary" href="#/class/${c.id}">Open</a></div></div>`;
+  let body;
+  if (!classes.length) {
+    body = h`<div class="card"><div class="empty"><strong>${others ? 'No classes to show' : arch ? 'No classes yet' : 'No active classes yet'}</strong>${others ? 'This teacher has no classes yet.' : 'Create a class, give students its code, then set up your seating chart.'}</div></div>`;
+  } else if (others && v.sort === 'teacher') {
+    const groups = [];
+    for (const c of classes) {
+      const g = groups[groups.length - 1];
+      if (g && g.id === c.owner_id) g.items.push(c); else groups.push({ id: c.owner_id, label: lastFirst(c.owner_name, c.owner_last_name), items: [c] });
+    }
+    body = h`${groups.map((g) => h`<h2 class="mt16">${g.label} <span class="muted small">\u2022 ${g.items.length} class${g.items.length === 1 ? '' : 'es'}</span></h2><div class="class-grid">${g.items.map(card)}</div>`)}`;
+  } else {
+    body = h`<div class="class-grid">${classes.map(card)}</div>`;
+  }
+  mount(el, h`
+    <div class="page-head"><div><h1>\ud83c\udfeb ${others ? 'Classes' : 'My classes'}</h1><p class="muted">${others ? 'Classes made by teachers at your school.' : 'Classes you created. Each has a code students type in to join. Open one for its seating chart.'}</p></div>
+      <div class="actions"><button class="btn primary" id="new">New class</button></div></div>
+    <div class="card no-print"><div class="form-grid">
+      ${admin ? h`<div><label for="cv_owner">Show</label><select id="cv_owner"><option value="me" ${v.owner === 'me' ? raw('selected') : ''}>My classes</option><option value="all" ${v.owner === 'all' ? raw('selected') : ''}>All teachers</option>
+        ${data.teachers && data.teachers.length ? h`<optgroup label="One teacher (by last name)">${data.teachers.map((t) => h`<option value="${t.id}" ${String(t.id) === v.owner ? raw('selected') : ''}>${lastFirst(t.name, t.last_name)}</option>`)}</optgroup>` : ''}</select></div>` : ''}
+      <div><label for="cv_sort">Sort by</label><select id="cv_sort">
+        <option value="period" ${v.sort === 'period' ? raw('selected') : ''}>Period</option>
+        <option value="name" ${v.sort === 'name' ? raw('selected') : ''}>Class name</option>
+        ${others ? h`<option value="teacher" ${v.sort === 'teacher' ? raw('selected') : ''}>Teacher (last name)</option>` : ''}</select></div>
+      <div class="self-end"><label class="check"><input type="checkbox" id="arch" ${arch ? raw('checked') : ''}> Show archived</label></div></div></div>
+    ${body}`);
+  const ownerSel = $('#cv_owner', el);
+  if (ownerSel) ownerSel.addEventListener('change', () => { v.owner = ownerSel.value; v.sort = v.owner === 'all' ? 'teacher' : 'period'; classesList(el).catch(fail); });
+  $('#cv_sort', el).addEventListener('change', (e) => { v.sort = e.target.value; classesList(el).catch(fail); });
   $('#arch', el).addEventListener('change', (e) => { state.showArchivedClasses = e.target.checked; classesList(el).catch(fail); });
   $$('[data-copy]', el).forEach((b) => b.addEventListener('click', () => copyText(b.dataset.copy)));
   $('#new', el).addEventListener('click', () => {
@@ -39,6 +81,7 @@ export async function classesList(el) {
     $('[data-s]', m.el).addEventListener('click', async () => {
       try {
         const r = await api('/classes', { method: 'POST', body: { name: $('#c_n', m.el).value, period: $('#c_p', m.el).value || null } });
+        v.owner = 'me';
         m.close(); toast('Class created. Share the code with your students.'); location.hash = '#/class/' + r.id;
       } catch (e) { $('#c_err', m.el).textContent = e.message; }
     });
@@ -586,11 +629,11 @@ export async function studentClasses(el) {
   loading(el);
   const { classes } = await api('/student/classes');
   mount(el, h`
-    <h1>\ud83d\udd11 My classes</h1><p class="muted">Type the code your teacher gave you to join a class.</p>
+    <h1>\ud83d\udd11 My classes</h1><p class="muted">Type the code your teacher gave you to join a class. You can only see classes you have joined.</p>
     <div class="card maxw480"><div class="field"><label for="jc">Class code</label>
       <input type="text" id="jc" maxlength="12" autocomplete="off" autocapitalize="characters" spellcheck="false" placeholder="ABC123" class="pin-input"></div>
       <button class="btn primary" id="jgo">Join class</button><div class="error-text" id="jerr" role="alert"></div></div>
-    <div class="card"><h2>Your classes</h2>
+    <div class="card"><h2>Classes you\u2019ve joined</h2>
       ${classes.length ? h`<div class="table-wrap"><table><thead><tr><th>Class</th><th>Period</th><th>Teacher</th><th></th></tr></thead><tbody>
         ${classes.map((c) => h`<tr><td><strong>${c.name}</strong></td><td>${c.period || ''}</td><td>${c.teacher}</td><td><button class="btn small danger" data-leave="${c.id}">Leave</button></td></tr>`)}</tbody></table></div>`
         : h`<div class="empty"><strong>You haven\u2019t joined a class yet</strong>Ask your teacher for the class code.</div>`}</div>`);

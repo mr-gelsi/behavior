@@ -23,7 +23,7 @@ It runs on **Cloudflare** (a Worker plus a D1 database) and deploys from **GitHu
 |---|---|
 | `public/` | The website pages (HTML, CSS, JavaScript). No third-party code. |
 | `src/` | The server code (Cloudflare Worker): sign-in, API, Rewards Day engine. |
-| `migrations/` | The database tables (`0001`), starter data (`0002`), and classes and seating charts (`0003`), and class rewards (`0004`). |
+| `migrations/` | The database tables (`0001`), starter data (`0002`), and classes and seating charts (`0003`), class rewards (`0004`), and staff last names (`0005`). |
 | `templates/` | Blank CSV files showing the import formats. |
 | `test/` | Automated tests (`npm test`) and a local demo server. |
 | `wrangler.jsonc` | Cloudflare settings. You edit **one line** here (the database ID). |
@@ -45,13 +45,13 @@ You need a free **GitHub** account and a **Cloudflare** account. Turn on two-fac
 
 ### Step 2: Create the database
 
-> Run **all four** files in `migrations/` (`0001`, `0002`, `0003`, `0004`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
+> Run **all five** files in `migrations/` (`0001` to `0005`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
 
 1. In the Cloudflare dashboard, open **Storage & databases → D1** and click **Create database**. Name it exactly `behavior-tracker`.
 2. Copy its **Database ID**.
 3. In GitHub, open `wrangler.jsonc`, click the pencil (edit), replace `REPLACE_WITH_YOUR_D1_DATABASE_ID` with the ID, and **Commit changes**. (The ID isn't a secret.)
 4. Create the tables, using **one** of these:
-   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then do the same with `0002_seed.sql`, `0003_classes.sql`, and `0004_class_rewards.sql`. (If a pasted file stops with "No SQL statements detected", it still has `--` comment lines. Delete those lines and try again.) If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
+   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then do the same with `0002_seed.sql`, `0003_classes.sql`, `0004_class_rewards.sql`, and `0005_staff_last_name.sql`. (If a pasted file stops with "No SQL statements detected", it still has `--` comment lines. Delete those lines and try again.) If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
    - **From a computer with Node installed:** in this folder run `npm install`, `npx wrangler login`, then `npm run db:migrate:remote`.
 
 ### Step 3: Connect GitHub to Cloudflare
@@ -106,6 +106,14 @@ To make a random string on a Mac or Linux computer: `openssl rand -base64 48`. A
 
 Teachers see only their own classes. Admins can open any class. Students never see classmates or the seating chart.
 
+### Finding classes: Show and Sort
+
+- **My Classes** opens on **My classes**, the classes you created. A teacher only ever sees their own.
+- **Admins** also get a **Show** menu: **All teachers**, or one teacher picked from a list ordered by **last name** (shown as "Last, First"). With **All teachers**, classes are grouped under each teacher, ordered by last name.
+- **Sort by:** **Period** (1, 2, 3 … then text periods, then classes with no period), **Class name**, or, when looking at other teachers, **Teacher (last name)**.
+- **Staff names** have separate **First name** and **Last name** boxes (**Admin → Staff users**), and the staff list is ordered by last name. Existing accounts get their last name filled in from their current name (the last word). Fix any that came out wrong, for example "Jr." or a two-word surname, by editing the account.
+- **Students** can only see classes they have joined, on their own **My Classes** page. They can't browse, list, or look up other classes, and a wrong, closed, or archived code all give the same answer.
+
 ### Rewards for each class
 
 - **School rewards** are the shared store items. Only an **Admin** adds or edits them (**Store → School rewards**).
@@ -119,7 +127,7 @@ Teachers see only their own classes. Admins can open any class. Students never s
 ### Updating a site that is already running
 
 1. Upload the new files to GitHub (replace the old ones). Cloudflare redeploys by itself.
-2. In the D1 Console, run any migration you haven't run yet, in order: `0003_classes.sql`, then `0004_class_rewards.sql`. Run each only once. Existing data is kept.
+2. In the D1 Console, run any migration you haven't run yet, in order: `0003_classes.sql`, then `0004_class_rewards.sql`, then `0005_staff_last_name.sql`. Run each only once. Existing data is kept.
 
 ### New school year checklist
 1. **Admin → Reward periods:** add the new dates.
@@ -155,7 +163,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 231 automated checks
+npm test                           # 260 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.

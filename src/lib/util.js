@@ -123,3 +123,25 @@ export function toCsv(rows, columns) {
 }
 
 export const fmtMD = (iso) => `${Number(iso.slice(5, 7))}/${Number(iso.slice(8, 10))}`;
+
+// Staff names: `name` is the full display name; `last_name` is stored so lists can sort by it.
+export const lastNameOf = (name) => String(name || '').trim().split(/\s+/).pop() || '';
+export function firstNameOf(name, lastName) {
+  const n = String(name || '').trim();
+  const l = String(lastName || '').trim();
+  return l && n.endsWith(l) ? n.slice(0, n.length - l.length).trim() : n;
+}
+// Accepts first_name + last_name (preferred) or a single name. `current` is the existing user, if any.
+export function nameFromBody(body, current) {
+  if (body.first_name !== undefined || body.last_name !== undefined) {
+    const first = V.str(body.first_name ?? (current ? firstNameOf(current.name, current.last_name) : undefined), 'First name', { max: 38 });
+    const last = V.str(body.last_name ?? (current ? current.last_name : undefined), 'Last name', { max: 38 });
+    return { name: `${first} ${last}`, last_name: last };
+  }
+  if (body.name !== undefined) {
+    const name = V.str(body.name, 'Name', { max: 80 });
+    return { name, last_name: lastNameOf(name) };
+  }
+  if (current) return { name: current.name, last_name: current.last_name || lastNameOf(current.name) };
+  throw bad('Enter a first and last name.');
+}

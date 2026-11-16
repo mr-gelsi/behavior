@@ -1,6 +1,6 @@
 import {
   state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, fmtDate, fmtMD, fmtDT, studentPicker, hashQuery,
-  loadCategories, catChip,
+  loadCategories, catChip, lastFirst,
 } from './core.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
@@ -219,7 +219,7 @@ export async function storeStaff(el) {
   if (tab === 'school') {
     const { items } = await api('/store/items');
     const school = items.filter((i) => i.scope === 'school');
-    const others = admin ? items.filter((i) => i.scope === 'custom') : [];
+    const others = admin ? items.filter((i) => i.scope === 'custom').sort((a, b) => String(a.owner_last_name || a.owner_name).localeCompare(String(b.owner_last_name || b.owner_name), undefined, { sensitivity: 'base' }) || String(a.name).localeCompare(String(b.name))) : [];
     mount(body, h`
       ${admin ? '' : h`<div class="banner info">School rewards are set by an Admin. A class offers all of them until its teacher chooses rewards on the class\u2019s <strong>Rewards</strong> tab. To add your own, use <a href="#/store" data-go="mine">My class rewards</a>.</div>`}
       <div class="card">${admin ? h`<div class="row end mb10"><button class="btn primary" id="new">Add school reward</button></div>` : ''}
@@ -229,7 +229,7 @@ export async function storeStaff(el) {
           : h`<div class="empty"><strong>No school rewards yet</strong>${admin ? 'Add something every class can offer.' : 'An Admin can add some.'}</div>`}</div>
       ${others.length ? h`<div class="card"><h2>Teachers\u2019 class rewards</h2><p class="muted">Only the teacher who made each one, and their classes, can use it.</p>
         <div class="table-wrap"><table><thead><tr><th></th><th>Reward</th><th>Teacher</th><th class="num">Price</th><th>Used in</th><th>Status</th></tr></thead><tbody>
-        ${others.map((i) => h`<tr><td>${i.emoji || ''}</td><td>${i.name}</td><td>${i.owner_name}</td><td class="num">${i.price}</td><td class="small">${i.classes.map((c) => c.name).join(', ') || '\u2014'}</td><td>${statusChip(i)}</td></tr>`)}</tbody></table></div></div>` : ''}`);
+        ${others.map((i) => h`<tr><td>${i.emoji || ''}</td><td>${i.name}</td><td>${lastFirst(i.owner_name, i.owner_last_name)}</td><td class="num">${i.price}</td><td class="small">${i.classes.map((c) => c.name).join(', ') || '\u2014'}</td><td>${statusChip(i)}</td></tr>`)}</tbody></table></div></div>` : ''}`);
     const nw = $('#new', body);
     if (nw) nw.addEventListener('click', () => itemForm(null, 'school', again));
     $$('[data-edit]', body).forEach((b) => b.addEventListener('click', () => itemForm(school.find((x) => String(x.id) === b.dataset.edit), 'school', again)));

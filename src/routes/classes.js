@@ -32,17 +32,33 @@ const publicClass = (cls, ownerName) => ({
 
 // ---- Staff: classes ---------------------------------------------------------------------
 
+// ?owner=me (default for everyone) | all | <teacher id>. Only Admins can look at other teachers' classes.
+// Teachers always get their own, whatever they ask for. Join codes are never shown across teachers.
 add('GET', '/api/classes', 'staff', async ({ env, user, url }) => {
   const archived = url.searchParams.get('archived') === '1' ? 1 : 0;
+  const admin = user.role === 'admin';
+  const want = url.searchParams.get('owner') || 'me';
+  let everyone = 0;
+  let ownerId = user.id;
+  if (admin && want === 'all') everyone = 1;
+  else if (admin && /^\d+$/.test(want)) ownerId = Number(want);
   const classes = await all(env,
-    `SELECT c.id, c.name, c.period, c.school_year, c.code, c.join_open, c.archived, c.owner_id, u.name AS owner_name,
+    `SELECT c.id, c.name, c.period, c.school_year, c.code, c.join_open, c.archived, c.owner_id,
+            u.name AS owner_name, u.last_name AS owner_last_name,
             (SELECT COUNT(*) FROM class_members m JOIN students s ON s.student_id = m.student_id
               WHERE m.class_id = c.id AND s.active = 1) AS members
        FROM classes c JOIN users u ON u.id = c.owner_id
       WHERE (? = 1 OR c.owner_id = ?) AND (? = 1 OR c.archived = 0)
-      ORDER BY c.archived, c.school_year DESC, c.name`,
-    user.role === 'admin' ? 1 : 0, user.id, archived);
-  return { classes: classes.map((x) => ({ ...x, join_open: !!x.join_open, archived: !!x.archived })) };
+      ORDER BY c.archived, lower(COALESCE(u.last_name, u.name)), lower(u.name), c.school_year DESC, c.period, c.name`,
+    everyone, ownerId, archived);
+  const out = { classes: classes.map((x) => ({ ...x, join_open: !!x.join_open, archived: !!x.archived })) };
+  if (admin) {
+    out.teachers = await all(env,
+      `SELECT u.id, u.name, u.last_name FROM users u
+        WHERE u.active = 1 AND (u.id = ? OR EXISTS (SELECT 1 FROM classes c WHERE c.owner_id = u.id))
+        ORDER BY lower(COALESCE(u.last_name, u.name)), lower(u.name)`, user.id);
+  }
+  return out;
 });
 
 add('POST', '/api/classes', 'staff', async (c) => {
@@ -266,8 +282,11 @@ add('GET', '/api/student/classes', 'student', async ({ env, student }) => ({
       WHERE m.student_id = ? AND c.archived = 0 ORDER BY c.period, c.name`, student.student_id),
 }));
 
+// A student can only act on a class they have joined. Anything else looks like "not found".
 add('DELETE', '/api/student/classes/:id', 'student', async (c) => {
   const id = V.int(c.params.id, 'class', { min: 1 });
+  const joined = await one(c.env, 'SELECT 1 AS x FROM class_members WHERE class_id = ? AND student_id = ?', id, c.student.student_id);
+  if (!joined) throw new HttpError(404, 'Class not found.');
   await removeMember(c.env, id, c.student.student_id);
   await audit(c.env, c.actor, 'class.leave', `class=${id}`);
   return { ok: true };

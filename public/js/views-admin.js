@@ -1,5 +1,5 @@
 import {
-  state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, fmtDate, fmtDT, parseCsv, normDate, downloadCsv,
+  state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, fmtDate, fmtDT, parseCsv, normDate, downloadCsv, lastFirst, firstOf,
 } from './core.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
@@ -298,12 +298,13 @@ async function settings(body, again) {
 async function users(body, again) {
   const { users: list } = await api('/admin/users');
   mount(body, h`<div class="card"><div class="row end mb10"><button class="btn primary" id="nu">Add staff account</button></div>
-    <div class="table-wrap"><table><thead><tr><th>Name</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map((u) => h`<tr><td>${u.name}</td><td>${u.email}</td><td>${u.role}</td><td><span class="chip ${u.active ? 'ok' : 'gray'}">${u.active ? 'Active' : 'Inactive'}</span></td><td><button class="btn small" data-e="${u.id}">Edit</button></td></tr>`)}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Name (last, first)</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
+    ${list.map((u) => h`<tr><td>${lastFirst(u.name, u.last_name)}</td><td>${u.email}</td><td>${u.role}</td><td><span class="chip ${u.active ? 'ok' : 'gray'}">${u.active ? 'Active' : 'Inactive'}</span></td><td><button class="btn small" data-e="${u.id}">Edit</button></td></tr>`)}</tbody></table></div>
     <div class="help">Teachers can record steps, award and fine P5, run the store, and manage their own Rewards Day activities. Admins can also change settings, import data, and manage accounts. Passwords need at least 12 characters.</div></div>`);
   const form = (u) => {
     const m = modal(u ? 'Edit staff account' : 'Add staff account', h`<div class="form-grid">
-      <div><label for="u_n">Name</label><input type="text" id="u_n" value="${u ? u.name : ''}" maxlength="80"></div>
+      <div><label for="u_f">First name</label><input type="text" id="u_f" value="${u ? firstOf(u.name, u.last_name) : ''}" maxlength="38" autocomplete="off"></div>
+      <div><label for="u_l">Last name</label><input type="text" id="u_l" value="${u ? u.last_name || '' : ''}" maxlength="38" autocomplete="off"></div>
       <div><label for="u_e">Email</label><input type="email" id="u_e" value="${u ? u.email : ''}" ${u ? raw('disabled') : ''} maxlength="120"></div>
       <div><label for="u_r">Role</label><select id="u_r"><option value="teacher" ${u && u.role === 'teacher' ? raw('selected') : ''}>Teacher</option><option value="admin" ${u && u.role === 'admin' ? raw('selected') : ''}>Admin</option></select></div>
       <div><label for="u_p">${u ? 'New password (leave blank to keep)' : 'Password'}</label><input type="password" id="u_p" autocomplete="new-password" minlength="12"></div></div>
@@ -312,7 +313,7 @@ async function users(body, again) {
     $('[data-x]', m.el).addEventListener('click', m.close);
     $('[data-s]', m.el).addEventListener('click', async () => {
       const v = (x) => $(x, m.el).value;
-      const payload = { name: v('#u_n'), role: v('#u_r') };
+      const payload = { first_name: v('#u_f'), last_name: v('#u_l'), role: v('#u_r') };
       if (v('#u_p')) payload.password = v('#u_p');
       try {
         if (u) { payload.active = $('#u_a', m.el).checked; await api('/admin/users/' + u.id, { method: 'PATCH', body: payload }); }
