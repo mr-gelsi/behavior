@@ -8,6 +8,7 @@ A private website for a middle school (grades 6–8) to:
 - award or fine **P5 points** (Prompt, Prepared, Positive, Polite, Productive), optionally adding a step with a fine,
 - run a **P5 store** where students spend points,
 - let students **reserve a seat** in Rewards Day activities that teachers create, while non-qualifiers are **assigned to rooms automatically**,
+- let each teacher choose which **rewards** each class can buy, including **custom rewards** only their classes can see,
 - let teachers create **classes** with a join code, build a drag-and-drop **seating chart**, and award or fine P5 points right from each student's desk.
 
 It runs on **Cloudflare** (a Worker plus a D1 database) and deploys from **GitHub**. There is no server to maintain.
@@ -22,7 +23,7 @@ It runs on **Cloudflare** (a Worker plus a D1 database) and deploys from **GitHu
 |---|---|
 | `public/` | The website pages (HTML, CSS, JavaScript). No third-party code. |
 | `src/` | The server code (Cloudflare Worker): sign-in, API, Rewards Day engine. |
-| `migrations/` | The database tables (`0001`), starter data (`0002`), and classes and seating charts (`0003`). |
+| `migrations/` | The database tables (`0001`), starter data (`0002`), and classes and seating charts (`0003`), and class rewards (`0004`). |
 | `templates/` | Blank CSV files showing the import formats. |
 | `test/` | Automated tests (`npm test`) and a local demo server. |
 | `wrangler.jsonc` | Cloudflare settings. You edit **one line** here (the database ID). |
@@ -44,13 +45,13 @@ You need a free **GitHub** account and a **Cloudflare** account. Turn on two-fac
 
 ### Step 2: Create the database
 
-> Run **all three** files in `migrations/` (`0001`, `0002`, `0003`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
+> Run **all four** files in `migrations/` (`0001`, `0002`, `0003`, `0004`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
 
 1. In the Cloudflare dashboard, open **Storage & databases → D1** and click **Create database**. Name it exactly `behavior-tracker`.
 2. Copy its **Database ID**.
 3. In GitHub, open `wrangler.jsonc`, click the pencil (edit), replace `REPLACE_WITH_YOUR_D1_DATABASE_ID` with the ID, and **Commit changes**. (The ID isn't a secret.)
 4. Create the tables, using **one** of these:
-   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then do the same with `0002_seed.sql` and `0003_classes.sql`. (If a pasted file stops with "No SQL statements detected", it still has `--` comment lines. Delete those lines and try again.) If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
+   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then do the same with `0002_seed.sql`, `0003_classes.sql`, and `0004_class_rewards.sql`. (If a pasted file stops with "No SQL statements detected", it still has `--` comment lines. Delete those lines and try again.) If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
    - **From a computer with Node installed:** in this folder run `npm install`, `npx wrangler login`, then `npm run db:migrate:remote`.
 
 ### Step 3: Connect GitHub to Cloudflare
@@ -100,14 +101,25 @@ To make a random string on a Mac or Linux computer: `openssl rand -base64 48`. A
    - Change the grid size, add a teacher desk, then click **Save layout**. Leaving the page with unsaved changes asks first.
 4. **Copy a layout:** in Edit layout, choose another of your classes (archived ones included) and click **Copy layout here**. Tick the box to also seat students who are in both classes.
 5. **Award & fine mode:** each desk has **+** and **−** buttons. **+** opens a window where you pick an amount, then tap what it's for (Prompt, Prepared, Positive, Polite, Productive) and the points are given. **−** works the same way, with the optional "Also add a step" box. You can also print the chart.
-6. On the **P5 Points** page, **Add a whole class or homeroom** now includes your classes.
+6. **Whole class:** **Award whole class** and **Fine whole class** (on the Seating chart and Students tabs) open a checklist of the class. Untick anyone who is absent, pick an amount and what it's for, and confirm. A fine can add a step to everyone fined. It all saves together or not at all.
+7. On the **P5 Points** page, **Add a whole class or homeroom** also includes your classes.
 
 Teachers see only their own classes. Admins can open any class. Students never see classmates or the seating chart.
+
+### Rewards for each class
+
+- **School rewards** are the shared store items. Only an **Admin** adds or edits them (**Store → School rewards**).
+- **Custom rewards:** any teacher can add rewards just for their own classes under **Store → My class rewards**, such as "Five minutes of extra recess." No other teacher can see or edit them.
+- **Choosing what a class offers:** open the class and go to the **Rewards** tab. Tick the school rewards and custom rewards you want, then **Save rewards**. You can also add a custom reward right there, copy another class's ticks, or go **Back to default**.
+- **The default:** until you save a choice, a class offers **every school reward**, so nothing changes for classes you haven't touched. Students who aren't in any class also see the school rewards.
+- **What students see:** only the rewards their classes offer. A student in several classes can buy anything any of those classes offers. Custom rewards show "From <teacher>".
+- **Orders:** orders for school rewards are visible to all staff. Orders for a custom reward are visible only to the teacher who made it, and Admins. Only they can fulfil or cancel them.
+- **Archiving a class** removes its rewards from its students. A student left with no active class sees the school rewards.
 
 ### Updating a site that is already running
 
 1. Upload the new files to GitHub (replace the old ones). Cloudflare redeploys by itself.
-2. In the D1 Console, run `migrations/0003_classes.sql` once. Nothing else in the database changes.
+2. In the D1 Console, run any migration you haven't run yet, in order: `0003_classes.sql`, then `0004_class_rewards.sql`. Run each only once. Existing data is kept.
 
 ### New school year checklist
 1. **Admin → Reward periods:** add the new dates.
@@ -143,7 +155,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 181 automated checks
+npm test                           # 231 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.

@@ -5,7 +5,7 @@ import { liveNonquals, dayOverview, getDay } from '../lib/rewards.js';
 
 const MONTHS = [8, 9, 10, 11, 12, 1, 2, 3, 4, 5, 6]; // August through June
 
-add('GET', '/api/dashboard', 'staff', async ({ env, url }) => {
+add('GET', '/api/dashboard', 'staff', async ({ env, url, user }) => {
   const today = todayStr(env);
   const year = url.searchParams.get('year') || schoolYearOf(today);
   const from = url.searchParams.get('from') ? V.date(url.searchParams.get('from'), 'from') : null;
@@ -60,7 +60,9 @@ add('GET', '/api/dashboard', 'staff', async ({ env, url }) => {
 
   // Banners.
   const banners = [];
-  const pending = (await one(env, "SELECT COUNT(*) AS c FROM store_orders WHERE status = 'pending'")).c;
+  const pending = (await one(env,
+    `SELECT COUNT(*) AS c FROM store_orders o JOIN store_items i ON i.id = o.item_id
+      WHERE o.status = 'pending' AND (? = 1 OR i.owner_id IS NULL OR i.owner_id = ?)`, user.role === 'admin' ? 1 : 0, user.id)).c;
   if (pending) banners.push({ kind: 'info', text: `${pending} store order${pending === 1 ? '' : 's'} waiting to be fulfilled.`, link: '#/store', link_text: 'View orders' });
   const upcoming = await all(env,
     `SELECT d.*, p.name AS period_name, p.start_date, p.end_date FROM reward_days d JOIN reward_periods p ON p.id = d.reward_period_id

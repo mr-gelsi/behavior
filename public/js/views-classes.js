@@ -1,6 +1,7 @@
 import {
   state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, studentPicker, loadCategories, fmtDate,
 } from './core.js';
+import { itemForm } from './views-p5.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
 
@@ -61,7 +62,7 @@ export async function classDetail(el, id) {
     <div class="card no-print"><div class="row">
       <div class="code-box big"><span class="code">${c.code}</span><button class="btn small" id="copy">Copy</button></div>
       <div class="muted grow-220">Students sign in, open <strong>My Classes</strong>, and type this code. <span class="chip ${c.join_open && !c.archived ? 'ok' : 'gray'}">${c.join_open && !c.archived ? 'Joining open' : 'Joining closed'}</span></div></div></div>
-    <div class="tabs no-print" role="tablist">${[['seating', 'Seating chart'], ['students', 'Students'], ['settings', 'Settings']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
+    <div class="tabs no-print" role="tablist">${[['seating', 'Seating chart'], ['students', 'Students'], ['rewards', 'Rewards'], ['settings', 'Settings']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
     <div id="tab"></div>`);
   $('#copy', el).addEventListener('click', () => copyText(c.code));
   $$('.tabs button', el).forEach((b) => b.addEventListener('click', async () => {
@@ -71,6 +72,7 @@ export async function classDetail(el, id) {
   const box = $('#tab', el);
   if (tab === 'seating') await seating(box, d, reload);
   else if (tab === 'students') await studentsTab(box, d, reload);
+  else if (tab === 'rewards') await rewardsTab(box, d, reload);
   else settingsTab(box, d, reload);
 }
 
@@ -138,6 +140,7 @@ async function seating(box, d, reload) {
         <div class="seg" role="group" aria-label="Seating mode"><button type="button" data-mode="use" aria-pressed="${!edit}">\u2b50 Award &amp; fine</button><button type="button" data-mode="edit" aria-pressed="${edit}">\u270f\ufe0f Edit layout</button></div>
         <div class="row">${dirty ? h`<span class="chip dirty-chip">Unsaved changes</span>` : ''}
           ${dirty ? h`<button type="button" class="btn" id="discard">Discard</button><button type="button" class="btn primary" id="save">Save layout</button>` : ''}
+          ${!edit ? h`<button type="button" class="btn plus-btn" id="clsAward" ${d.members.length ? '' : raw('disabled')}>\u2b50 Award whole class</button><button type="button" class="btn danger" id="clsFine" ${d.members.length ? '' : raw('disabled')}>Fine whole class</button>` : ''}
           ${!edit && !dirty ? h`<button type="button" class="btn" id="print">Print seating chart</button>` : ''}</div>
       </div>
       ${edit ? h`<div class="help no-print mb10">Drag a desk to move it (or focus it and use the arrow keys). Click an empty spot to add a desk. Pick a student on the right, then click a desk to seat them. Remember to save.</div>`
@@ -192,6 +195,7 @@ async function seating(box, d, reload) {
     if (btn.dataset.mode) { edit = btn.dataset.mode === 'edit'; state.seatEdit = edit; pick = null; if (edit && !others) await loadOthers(); paint(); return; }
     if (btn.dataset.act) { const m = members.get(Number(btn.dataset.sid)); if (m) deskReward(m, btn.dataset.act, paint); return; }
     if (btn.id === 'print') { window.print(); return; }
+    if (btn.id === 'clsAward' || btn.id === 'clsFine') { classReward(d, btn.id === 'clsAward' ? 'award' : 'fine', paint); return; }
     if (btn.id === 'save') {
       btn.disabled = true;
       try {
@@ -360,6 +364,88 @@ async function deskReward(m, mode, done) {
   }
 }
 
+
+// --------------------------------------------------------------------------------------
+// Award or fine the whole class at once (untick anyone who is absent)
+// --------------------------------------------------------------------------------------
+async function classReward(d, mode, done) {
+  let cats;
+  try { cats = await loadCategories(); } catch (e) { fail(e); return; }
+  const me = state.me;
+  const maxAmt = me.user.role === 'admin' ? 1000 : me.settings.teacher_max_p5;
+  const amounts = [1, 2, 3, 5, 10].filter((n) => n <= maxAmt);
+  let amount = amounts.includes(state.classAmount) ? state.classAmount : amounts[0];
+  let cat = null, level = null;
+  const award = mode === 'award';
+  const dlg = modal(`${award ? 'Award' : 'Fine'} the whole class: ${d.class.name}`, h`
+    <div class="field"><div class="row jc-between mb8"><label>Who is here? <span id="cnt" class="chip gray"></span></label>
+      <div class="row"><button type="button" class="btn small" id="all">All</button><button type="button" class="btn small" id="none">None</button></div></div>
+      <div class="check-grid" id="who">${d.members.map((m) => h`<label class="check"><input type="checkbox" data-sid="${m.student_id}" ${raw('checked')}> ${m.last_name}, ${m.first_name}</label>`)}</div>
+      <div class="help">Untick anyone who is absent or shouldn\u2019t get this.</div></div>
+    <div class="field"><label>Amount each</label><div class="amt-btns" id="amts">${amounts.map((n) => h`<button type="button" class="btn" data-amt="${n}" aria-pressed="${n === amount}">${n}</button>`)}</div></div>
+    <div class="field"><label>What is it for?</label>
+      <div class="cat-btns" id="cats">${cats.map((c) => h`<button type="button" class="cat-btn cat-${c.id}" data-cat="${c.id}" aria-pressed="false"><span class="em">${c.emoji}</span>${c.name}</button>`)}</div></div>
+    <div class="field"><label for="cn">Note (optional)</label><input type="text" id="cn" maxlength="200" placeholder="${award ? 'Great discussion today' : ''}"></div>
+    ${award ? '' : h`<div class="card card-alt"><label class="check"><input type="checkbox" id="cstep"> Also add a step to each student\u2019s record</label>
+      <div id="csteps" class="hidden mt12"><div class="step-btns">${[1, 2, 3, 4, 5].map((n) => h`<button type="button" class="step-btn s${n}" data-step="${n}" aria-pressed="false">Step ${n}</button>`)}</div></div></div>`}
+    <div class="row end"><button type="button" class="btn" data-x>Cancel</button><button type="button" class="btn ${award ? 'primary' : 'danger'}" id="cgo"></button></div>
+    <div class="error-text" id="cerr" role="alert"></div>`);
+  const boxes = () => $$('#who input', dlg.el);
+  const chosen = () => boxes().filter((b) => b.checked).map((b) => Number(b.dataset.sid));
+  const sync = () => {
+    const n = chosen().length;
+    $('#cnt', dlg.el).textContent = `${n} of ${d.members.length}`;
+    const go = $('#cgo', dlg.el);
+    go.textContent = `${award ? 'Award' : 'Fine'} ${n} student${n === 1 ? '' : 's'}`;
+    go.disabled = n === 0;
+  };
+  boxes().forEach((b) => b.addEventListener('change', sync));
+  $('#all', dlg.el).addEventListener('click', () => { boxes().forEach((b) => { b.checked = true; }); sync(); });
+  $('#none', dlg.el).addEventListener('click', () => { boxes().forEach((b) => { b.checked = false; }); sync(); });
+  $$('#amts [data-amt]', dlg.el).forEach((b) => b.addEventListener('click', () => {
+    amount = Number(b.dataset.amt);
+    $$('#amts [data-amt]', dlg.el).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  $$('#cats [data-cat]', dlg.el).forEach((b) => b.addEventListener('click', () => {
+    cat = cats.find((c) => c.id === Number(b.dataset.cat));
+    $$('#cats [data-cat]', dlg.el).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+  }));
+  if (!award) {
+    $('#cstep', dlg.el).addEventListener('change', (e) => $('#csteps', dlg.el).classList.toggle('hidden', !e.target.checked));
+    $$('[data-step]', dlg.el).forEach((b) => b.addEventListener('click', () => {
+      level = Number(b.dataset.step);
+      $$('[data-step]', dlg.el).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    }));
+  }
+  $('[data-x]', dlg.el).addEventListener('click', dlg.close);
+  $('#cgo', dlg.el).addEventListener('click', async () => {
+    const err = $('#cerr', dlg.el);
+    err.textContent = '';
+    const ids = chosen();
+    const addStep = !award && $('#cstep', dlg.el).checked;
+    if (!ids.length) { err.textContent = 'Choose at least one student.'; return; }
+    if (!cat) { err.textContent = 'Choose what it\u2019s for.'; return; }
+    if (addStep && !level) { err.textContent = 'Choose a step level, or untick \u201cAlso add a step\u201d.'; return; }
+    const who = ids.length === d.members.length ? `all ${ids.length} students` : `${ids.length} of ${d.members.length} students`;
+    const msg = `${award ? 'Award' : 'Fine'} ${amount} ${cat.name} point${amount === 1 ? '' : 's'} ${award ? 'to' : 'from'} ${who}${addStep ? `, and add a Step ${level} to each of their records` : ''}?`;
+    if (!(await confirmBox(msg, { ok: award ? 'Award' : 'Fine', danger: !award }))) return;
+    const go = $('#cgo', dlg.el);
+    go.disabled = true;
+    try {
+      const r = await api('/p5', { method: 'POST', body: {
+        mode, student_ids: ids, category_id: cat.id, amount, note: $('#cn', dlg.el).value || null, date: me.today,
+        step: addStep ? { add: true, level } : undefined } });
+      const bal = new Map(r.results.map((x) => [x.student_id, x.balance]));
+      d.members.forEach((m) => { if (bal.has(m.student_id)) m.balance = bal.get(m.student_id); });
+      state.classAmount = amount;
+      dlg.close();
+      toast(`${award ? 'Awarded' : 'Fined'} ${amount} ${cat.name} point${amount === 1 ? '' : 's'} ${award ? 'to' : 'from'} ${ids.length} student${ids.length === 1 ? '' : 's'}${addStep ? ' and added a step to each' : ''}.`);
+      done();
+    } catch (e) { err.textContent = e.message; go.disabled = false; }
+  });
+  sync();
+}
+
 // --------------------------------------------------------------------------------------
 // Students tab
 // --------------------------------------------------------------------------------------
@@ -372,12 +458,15 @@ async function studentsTab(box, d, reload) {
       ${hr.homerooms.length ? h`<div class="row mt8"><select id="hr" aria-label="Add a whole homeroom" class="maxw340"><option value="">Add a whole homeroom\u2026</option>
         ${hr.homerooms.map((x) => h`<option value="${x.grade}|${x.homeroom_teacher}">Grade ${x.grade} \u2022 ${x.homeroom_teacher} (${x.n})</option>`)}</select><button type="button" class="btn small" id="addhr">Pick homeroom</button></div>` : ''}
       <div class="row mt12"><button type="button" class="btn primary" id="addgo">Add to class</button></div></div>
-    <div class="card"><h2>${d.members.length} student${d.members.length === 1 ? '' : 's'} in this class</h2>
+    <div class="card"><div class="row jc-between mb8"><h2 class="m0">${d.members.length} student${d.members.length === 1 ? '' : 's'} in this class</h2>
+      <div class="row no-print"><button type="button" class="btn plus-btn" id="clsAward" ${d.members.length ? '' : raw('disabled')}>\u2b50 Award whole class</button><button type="button" class="btn danger" id="clsFine" ${d.members.length ? '' : raw('disabled')}>Fine whole class</button></div></div>
       ${d.members.length ? h`<div class="table-wrap"><table><thead><tr><th>Student</th><th>Gr</th><th>Homeroom</th><th class="num">P5</th><th>Joined</th><th class="no-print"></th></tr></thead><tbody>
         ${d.members.map((m) => h`<tr><td>${m.last_name}, ${m.first_name}</td><td>${m.grade}</td><td>${m.homeroom_teacher || ''}</td><td class="num">${m.balance}</td>
           <td class="small">${m.source === 'code' ? 'With code' : 'Added by teacher'} \u2022 ${fmtDate(m.joined_at.slice(0, 10))}</td>
           <td class="no-print"><button class="btn small danger" data-rm="${m.student_id}">Remove</button></td></tr>`)}</tbody></table></div>`
         : h`<div class="empty"><strong>No students yet</strong>Share the class code or add students above.</div>`}</div>`);
+  $('#clsAward', box).addEventListener('click', () => classReward(d, 'award', reload));
+  $('#clsFine', box).addEventListener('click', () => classReward(d, 'fine', reload));
   const picker = studentPicker($('#pk', box), { multi: true });
   const addhr = $('#addhr', box);
   if (addhr) addhr.addEventListener('click', async () => {
@@ -398,6 +487,66 @@ async function studentsTab(box, d, reload) {
     if (!(await confirmBox(`Remove ${m.first_name} ${m.last_name} from this class? Their desk is emptied.`, { ok: 'Remove', danger: true }))) return;
     try { await api(`/classes/${d.class.id}/members/${m.student_id}`, { method: 'DELETE' }); toast('Removed.'); reload(); } catch (e) { fail(e); }
   }));
+}
+
+// --------------------------------------------------------------------------------------
+// Rewards tab: which store rewards this class offers
+// --------------------------------------------------------------------------------------
+async function rewardsTab(box, d, reload) {
+  const cid = d.class.id;
+  const [r, list] = await Promise.all([api(`/classes/${cid}/rewards`), api('/classes?archived=1')]);
+  const school = r.items.filter((i) => i.scope === 'school');
+  const custom = r.items.filter((i) => i.scope === 'custom');
+  const others = list.classes.filter((c) => c.id !== cid);
+  const isOn = (id) => (r.configured ? r.selected.includes(id) : school.some((i) => i.id === id));
+  const row = (i) => h`<label class="reward-row"><input type="checkbox" data-item="${i.id}" ${isOn(i.id) ? raw('checked') : ''}>
+    <span class="rw-em">${i.emoji || '\ud83c\udf81'}</span>
+    <span class="rw-main"><strong>${i.name}</strong><span class="muted small">${i.description || ''}</span></span>
+    <span class="chip gray">${i.price} P5</span><span class="muted small rw-stock">${i.stock === null ? '' : i.stock + ' left'}</span></label>`;
+  mount(box, h`
+    ${r.configured ? h`<div class="banner info">Students in this class can buy the rewards ticked below. Change the ticks and save to update them.</div>`
+      : h`<div class="banner warn">This class is using the <strong>default</strong>: every school reward. Tick the rewards you want, then save to choose your own.</div>`}
+    <div class="card"><div class="row jc-between mb8"><h2 class="m0">School rewards</h2>
+      <div class="row"><button type="button" class="btn small" id="rAll">Tick all</button><button type="button" class="btn small" id="rNone">Untick all</button></div></div>
+      ${school.length ? h`<div class="reward-list">${school.map(row)}</div>` : h`<div class="empty"><strong>No school rewards yet</strong>An Admin can add some on the Store page.</div>`}</div>
+    <div class="card"><div class="row jc-between mb8"><div><h2 class="m0">My class rewards</h2><p class="muted m0">Only students in classes where you tick them can see them.</p></div>
+      <button type="button" class="btn" id="rNew">Add a class reward</button></div>
+      ${custom.length ? h`<div class="reward-list">${custom.map(row)}</div>` : h`<div class="empty"><strong>No class rewards yet</strong>Add a reward just for your classes, like \u201cFive minutes of extra recess.\u201d</div>`}</div>
+    <div class="card"><div class="row jc-between">
+      <div class="row"><span class="chip gray" id="rCount"></span>
+        ${others.length ? h`<label for="rCopy" class="hidden">Copy from another class</label><select id="rCopy" class="maxw220">${others.map((o) => h`<option value="${o.id}">${o.name}${o.period ? ' (P' + o.period + ')' : ''} \u2022 ${o.school_year}</option>`)}</select><button type="button" class="btn small" id="rCopyGo">Copy ticks</button>` : ''}</div>
+      <div class="row">${r.configured ? h`<button type="button" class="btn danger" id="rReset">Back to default</button>` : ''}<button type="button" class="btn primary" id="rSave">Save rewards</button></div></div>
+      <div class="help mt8">Students who are in more than one class can buy anything any of their classes offers.</div></div>`);
+  const boxes = () => $$('input[data-item]', box);
+  const count = () => { const n = boxes().filter((b) => b.checked).length; $('#rCount', box).textContent = `${n} reward${n === 1 ? '' : 's'} on`; };
+  boxes().forEach((b) => b.addEventListener('change', count));
+  $('#rAll', box).addEventListener('click', () => { $$('input[data-item]', box).forEach((b) => { if (school.some((i) => String(i.id) === b.dataset.item)) b.checked = true; }); count(); });
+  $('#rNone', box).addEventListener('click', () => { $$('input[data-item]', box).forEach((b) => { if (school.some((i) => String(i.id) === b.dataset.item)) b.checked = false; }); count(); });
+  $('#rNew', box).addEventListener('click', () => itemForm(null, 'mine', () => { toast('Tick it below and save to offer it in this class.'); reload(); }));
+  const copy = $('#rCopyGo', box);
+  if (copy) copy.addEventListener('click', async () => {
+    try {
+      const src = await api(`/classes/${Number($('#rCopy', box).value)}/rewards`);
+      const on = new Set(src.configured ? src.selected : src.items.filter((i) => i.scope === 'school').map((i) => i.id));
+      boxes().forEach((b) => { b.checked = on.has(Number(b.dataset.item)); });
+      count();
+      toast('Ticks copied. Click Save rewards to keep them.');
+    } catch (e) { fail(e); }
+  });
+  $('#rSave', box).addEventListener('click', async () => {
+    const ids = boxes().filter((b) => b.checked).map((b) => Number(b.dataset.item));
+    try {
+      await api(`/classes/${cid}/rewards`, { method: 'PUT', body: { item_ids: ids } });
+      toast(ids.length ? `Saved. This class offers ${ids.length} reward${ids.length === 1 ? '' : 's'}.` : 'Saved. This class has no rewards switched on.');
+      reload();
+    } catch (e) { fail(e); }
+  });
+  const reset = $('#rReset', box);
+  if (reset) reset.addEventListener('click', async () => {
+    if (!(await confirmBox('Go back to the default (every school reward) for this class? Your custom picks for this class are cleared.', { ok: 'Back to default' }))) return;
+    try { await api(`/classes/${cid}/rewards`, { method: 'DELETE' }); toast('This class is using the default again.'); reload(); } catch (e) { fail(e); }
+  });
+  count();
 }
 
 // --------------------------------------------------------------------------------------

@@ -194,6 +194,49 @@ add('POST', '/api/classes/:id/copy-layout', 'staff', async (c) => {
   return { ok: true, desks: desks.length, seated, skipped };
 });
 
+// ---- Staff: which rewards a class offers ---------------------------------------------------
+// Until a teacher chooses, a class uses the default: every school reward.
+
+async function offerableItems(env, cls) {
+  const rows = await all(env,
+    `SELECT id, name, description, emoji, price, stock, max_per_student, owner_id FROM store_items
+      WHERE active = 1 AND (owner_id IS NULL OR owner_id = ?) ORDER BY owner_id IS NOT NULL, price, name`, cls.owner_id);
+  return rows.map((i) => ({ ...i, scope: i.owner_id === null ? 'school' : 'custom' }));
+}
+
+add('GET', '/api/classes/:id/rewards', 'staff', async (c) => {
+  const cls = await ownClass(c, c.params.id);
+  const items = await offerableItems(c.env, cls);
+  const selected = (await all(c.env, 'SELECT item_id FROM class_rewards WHERE class_id = ?', cls.id)).map((r) => r.item_id);
+  return { configured: !!cls.rewards_configured, selected, items };
+});
+
+add('PUT', '/api/classes/:id/rewards', 'staff', async (c) => {
+  const cls = await ownClass(c, c.params.id);
+  if (!Array.isArray(c.body.item_ids)) throw bad('Choose which rewards to offer.');
+  if (c.body.item_ids.length > 300) throw bad('That is too many rewards.');
+  const ids = [...new Set(c.body.item_ids.map((x) => V.int(x, 'Reward', { min: 1 })))];
+  const allowed = new Set((await offerableItems(c.env, cls)).map((i) => i.id));
+  if (ids.some((i) => !allowed.has(i))) throw bad('One of those rewards isn\u2019t available to this class.');
+  await chunked(c.env, [
+    st(c.env, 'DELETE FROM class_rewards WHERE class_id = ?', cls.id),
+    st(c.env, 'UPDATE classes SET rewards_configured = 1 WHERE id = ?', cls.id),
+    ...ids.map((i) => st(c.env, 'INSERT INTO class_rewards (class_id, item_id) VALUES (?, ?)', cls.id, i)),
+  ], 60);
+  await audit(c.env, c.actor, 'class.set_rewards', `id=${cls.id} rewards=${ids.length}`);
+  return { ok: true, selected: ids.length };
+});
+
+add('DELETE', '/api/classes/:id/rewards', 'staff', async (c) => {
+  const cls = await ownClass(c, c.params.id);
+  await batch(c.env, [
+    st(c.env, 'DELETE FROM class_rewards WHERE class_id = ?', cls.id),
+    st(c.env, 'UPDATE classes SET rewards_configured = 0 WHERE id = ?', cls.id),
+  ]);
+  await audit(c.env, c.actor, 'class.reset_rewards', `id=${cls.id}`);
+  return { ok: true };
+});
+
 // ---- Students: join with a code -------------------------------------------------------------
 
 add('POST', '/api/student/classes/join', 'student', async (c) => {

@@ -3,6 +3,7 @@ import { add } from '../router.js';
 import { all, one, st, batch, audit, balanceOf } from '../lib/db.js';
 import { V, bad, todayStr } from '../lib/util.js';
 import { cancelOrder } from './store.js';
+import { availableSql } from '../lib/store.js';
 
 add('GET', '/api/student/home', 'student', async ({ env, student }) => ({
   student: { first_name: student.first_name, last_name: student.last_name, grade: student.grade },
@@ -17,8 +18,10 @@ add('GET', '/api/student/store', 'student', async ({ env, student }) => {
   const balance = await balanceOf(env, student.student_id);
   const items = await all(env,
     `SELECT i.id, i.name, i.description, i.price, i.stock, i.max_per_student, i.emoji,
+            CASE WHEN i.owner_id IS NULL THEN NULL ELSE u.name END AS offered_by,
             (SELECT COUNT(*) FROM store_orders o WHERE o.item_id = i.id AND o.student_id = ? AND o.status <> 'cancelled') AS mine
-       FROM store_items i WHERE i.active = 1 ORDER BY i.price, i.name`, student.student_id);
+       FROM store_items i LEFT JOIN users u ON u.id = i.owner_id
+      WHERE ${availableSql(student.student_id)} ORDER BY i.price, i.name`, student.student_id);
   return {
     balance,
     items: items.map((i) => ({
@@ -35,6 +38,8 @@ add('POST', '/api/student/store/:id/buy', 'student', async (c) => {
   const itemId = V.int(c.params.id, 'item', { min: 1 });
   const item = await one(env, 'SELECT * FROM store_items WHERE id = ? AND active = 1', itemId);
   if (!item) throw bad('That item is not available.');
+  const offered = await one(env, `SELECT 1 AS x FROM store_items i WHERE i.id = ? AND ${availableSql(student.student_id)}`, itemId);
+  if (!offered) throw bad('That reward isn\u2019t available in your classes.');
   const today = todayStr(env);
   const res = await batch(env, [
     st(env,
@@ -43,6 +48,7 @@ add('POST', '/api/student/store/:id/buy', 'student', async (c) => {
         WHERE (SELECT COALESCE(SUM(amount), 0) FROM p5_transactions WHERE student_id = ?) >= ?
           AND (SELECT stock FROM store_items WHERE id = ?) IS NOT 0
           AND (SELECT active FROM store_items WHERE id = ?) = 1
+          AND EXISTS (SELECT 1 FROM store_items i WHERE i.id = ${itemId} AND ${availableSql(student.student_id)})
           AND ((SELECT max_per_student FROM store_items WHERE id = ?) IS NULL
                OR (SELECT COUNT(*) FROM store_orders WHERE student_id = ? AND item_id = ? AND status <> 'cancelled')
                   < (SELECT max_per_student FROM store_items WHERE id = ?))`,
@@ -58,6 +64,7 @@ add('POST', '/api/student/store/:id/buy', 'student', async (c) => {
     const bal = await balanceOf(env, student.student_id);
     if (bal < item.price) throw bad(`You need ${item.price - bal} more P5 to buy this.`);
     if (fresh.stock === 0) throw bad('Sorry, this item just sold out.');
+    if (!(await one(env, `SELECT 1 AS x FROM store_items i WHERE i.id = ? AND ${availableSql(student.student_id)}`, itemId))) throw bad('That reward isn\u2019t available in your classes.');
     throw bad('You\u2019ve reached the limit for this item.');
   }
   await audit(env, c.actor, 'store.buy', `item=${itemId} price=${item.price}`);

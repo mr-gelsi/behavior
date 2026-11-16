@@ -27,11 +27,11 @@ export async function studentStore(el) {
     ${s.items.length ? h`<div class="shop-grid">${s.items.map((i) => {
       const blocked = i.sold_out || i.at_limit || i.short_by > 0;
       const why = i.sold_out ? 'Sold out' : i.at_limit ? 'You\u2019ve reached the limit' : i.short_by > 0 ? `You need ${i.short_by} more P5` : '';
-      return h`<div class="shop-card"><div class="em">${i.emoji || '\ud83c\udf81'}</div><strong>${i.name}</strong><div class="muted small grow">${i.description || ''}</div>
+      return h`<div class="shop-card"><div class="em">${i.emoji || '\ud83c\udf81'}</div><strong>${i.name}</strong>${i.offered_by ? h`<span class="chip gray">From ${i.offered_by}</span>` : ''}<div class="muted small grow">${i.description || ''}</div>
         <div class="price">${i.price} P5</div>
         ${i.stock !== null && !i.sold_out ? h`<div class="muted small">${i.stock} left</div>` : ''}
         <button class="btn ${blocked ? '' : 'primary'}" data-buy="${i.id}" ${blocked ? raw('disabled') : ''}>${blocked ? why : 'Buy'}</button></div>`;
-    })}</div>` : h`<div class="card"><div class="empty"><strong>The store is empty</strong>Check back soon.</div></div>`}
+    })}</div>` : h`<div class="card"><div class="empty"><strong>No rewards are available yet</strong>Your teachers choose which rewards each class offers. Check back soon or ask your teacher.</div></div>`}
     <div class="card mt16"><h2>Your orders</h2>
       ${o.orders.length ? h`<div class="table-wrap"><table><thead><tr><th>Ordered</th><th>Item</th><th class="num">Paid</th><th>Status</th><th></th></tr></thead><tbody>
         ${o.orders.map((x) => h`<tr><td class="nowrap">${fmtDT(x.created_at)}</td><td>${x.emoji || ''} ${x.name}</td><td class="num">${x.price_paid}</td>

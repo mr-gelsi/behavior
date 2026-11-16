@@ -175,45 +175,83 @@ export async function p5(el) {
 // ======================================================================================
 // Store (staff): items, orders, pick list
 // ======================================================================================
+// Add or edit a reward. scope: 'school' (Admins only) or 'mine' (a teacher's custom reward).
+export function itemForm(item, scope, onSaved) {
+  const i = item || { name: '', description: '', price: 10, stock: null, max_per_student: null, emoji: '', active: 1 };
+  const custom = scope !== 'school';
+  const m = modal(item ? 'Edit reward' : (custom ? 'Add a class reward' : 'Add a school reward'), h`
+    <div class="form-grid">
+      <div><label for="i_n">Name</label><input type="text" id="i_n" value="${i.name}" maxlength="60"></div>
+      <div><label for="i_e">Emoji</label><input type="text" id="i_e" value="${i.emoji || ''}" maxlength="8"></div>
+      <div><label for="i_p">Price (P5 points)</label><input type="number" id="i_p" min="1" value="${i.price}"></div>
+      <div><label for="i_s">Stock (blank = unlimited)</label><input type="number" id="i_s" min="0" value="${i.stock ?? ''}"></div>
+      <div><label for="i_m">Limit per student (blank = none)</label><input type="number" id="i_m" min="1" value="${i.max_per_student ?? ''}"></div>
+    </div>
+    <div class="field"><label for="i_d">Description</label><input type="text" id="i_d" value="${i.description || ''}" maxlength="200"></div>
+    <label class="check"><input type="checkbox" id="i_a" ${i.active ? raw('checked') : ''}> ${custom ? 'Active (you can switch it on for your classes)' : 'For sale (students can see and buy it)'}</label>
+    ${custom ? h`<div class="help">Only students in classes where you switch this reward on can see it. You do that on each class\u2019s Rewards tab.</div>` : ''}
+    <div class="row end mt14"><button class="btn" data-x>Cancel</button><button class="btn primary" data-s>Save reward</button></div><div class="error-text" id="i_err"></div>`);
+  $('[data-x]', m.el).addEventListener('click', m.close);
+  $('[data-s]', m.el).addEventListener('click', async () => {
+    const v = (x) => $(x, m.el).value;
+    const body = { name: v('#i_n'), emoji: v('#i_e') || null, price: Number(v('#i_p')), stock: v('#i_s') === '' ? null : Number(v('#i_s')), max_per_student: v('#i_m') === '' ? null : Number(v('#i_m')), description: v('#i_d') || null, active: $('#i_a', m.el).checked };
+    if (!item) body.scope = custom ? 'mine' : 'school';
+    try { const r = await api(item ? '/store/items/' + item.id : '/store/items', { method: item ? 'PATCH' : 'POST', body }); m.close(); toast('Reward saved.'); onSaved(r); }
+    catch (e) { $('#i_err', m.el).textContent = e.message; }
+  });
+  $('#i_n', m.el).focus();
+}
+
 export async function storeStaff(el) {
-  const tab = state.storeTab || 'orders';
+  const admin = state.me.user.role === 'admin';
+  let tab = state.storeTab || 'orders';
+  if (tab === 'items') tab = 'school';
   mount(el, h`
-    <div class="page-head"><div><h1>\ud83d\udecd\ufe0f Store</h1><p class="muted">Items students can buy with P5 points</p></div></div>
-    <div class="tabs" role="tablist">${[['orders', 'Orders'], ['items', 'Items'], ['pick', 'Pick list']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
+    <div class="page-head"><div><h1>\ud83d\udecd\ufe0f Store</h1><p class="muted">Rewards students can buy with P5 points</p></div></div>
+    <div class="tabs" role="tablist">${[['orders', 'Orders'], ['school', 'School rewards'], ['mine', 'My class rewards'], ['pick', 'Pick list']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
     <div id="body"><div class="spinner">Loading\u2026</div></div>`);
   $$('.tabs button', el).forEach((b) => b.addEventListener('click', () => { state.storeTab = b.dataset.t; storeStaff(el).catch(fail); }));
   const body = $('#body', el);
+  const again = () => storeStaff(el).catch(fail);
+  const statusChip = (i) => h`<span class="chip ${i.active ? 'ok' : 'gray'}">${i.active ? 'For sale' : 'Hidden'}</span>`;
+  const stockText = (i) => (i.stock === null ? 'Unlimited' : i.stock);
 
-  if (tab === 'items') {
+  if (tab === 'school') {
     const { items } = await api('/store/items');
-    mount(body, h`<div class="card"><div class="row end mb10"><button class="btn primary" id="new">Add item</button></div>
-      ${items.length ? h`<div class="table-wrap"><table><thead><tr><th></th><th>Item</th><th class="num">Price</th><th class="num">Stock</th><th class="num">Limit per student</th><th>Status</th><th></th></tr></thead><tbody>
-      ${items.map((i) => h`<tr><td>${i.emoji || ''}</td><td><strong>${i.name}</strong><div class="muted small">${i.description || ''}</div></td><td class="num">${i.price}</td><td class="num">${i.stock === null ? 'Unlimited' : i.stock}</td><td class="num">${i.max_per_student ?? '\u2014'}</td>
-        <td><span class="chip ${i.active ? 'ok' : 'gray'}">${i.active ? 'For sale' : 'Hidden'}</span></td><td><button class="btn small" data-edit="${i.id}">Edit</button></td></tr>`)}</tbody></table></div>`
-        : h`<div class="empty"><strong>No items yet</strong>Add something students can buy.</div>`}</div>`);
-    const edit = (i) => {
-      i = i || { name: '', description: '', price: 10, stock: null, max_per_student: null, emoji: '', active: 1 };
-      const m = modal(i.id ? 'Edit item' : 'Add item', h`
-        <div class="form-grid">
-          <div><label for="i_n">Name</label><input type="text" id="i_n" value="${i.name}" maxlength="60"></div>
-          <div><label for="i_e">Emoji</label><input type="text" id="i_e" value="${i.emoji || ''}" maxlength="8"></div>
-          <div><label for="i_p">Price (P5 points)</label><input type="number" id="i_p" min="1" value="${i.price}"></div>
-          <div><label for="i_s">Stock (blank = unlimited)</label><input type="number" id="i_s" min="0" value="${i.stock ?? ''}"></div>
-          <div><label for="i_m">Limit per student (blank = none)</label><input type="number" id="i_m" min="1" value="${i.max_per_student ?? ''}"></div>
-        </div>
-        <div class="field"><label for="i_d">Description</label><input type="text" id="i_d" value="${i.description || ''}" maxlength="200"></div>
-        <label class="check"><input type="checkbox" id="i_a" ${i.active ? raw('checked') : ''}> For sale (students can see and buy it)</label>
-        <div class="row end mt14"><button class="btn" data-x>Cancel</button><button class="btn primary" data-s>Save item</button></div><div class="error-text" id="i_err"></div>`);
-      $('[data-x]', m.el).addEventListener('click', m.close);
-      $('[data-s]', m.el).addEventListener('click', async () => {
-        const v = (s) => $(s, m.el).value;
-        const body = { name: v('#i_n'), emoji: v('#i_e') || null, price: Number(v('#i_p')), stock: v('#i_s') === '' ? null : Number(v('#i_s')), max_per_student: v('#i_m') === '' ? null : Number(v('#i_m')), description: v('#i_d') || null, active: $('#i_a', m.el).checked };
-        try { await api(i.id ? '/store/items/' + i.id : '/store/items', { method: i.id ? 'PATCH' : 'POST', body }); m.close(); toast('Item saved.'); storeStaff(el).catch(fail); }
-        catch (e) { $('#i_err', m.el).textContent = e.message; }
-      });
-    };
-    $('#new', el).addEventListener('click', () => edit(null));
-    $$('[data-edit]', el).forEach((b) => b.addEventListener('click', () => edit(items.find((x) => String(x.id) === b.dataset.edit))));
+    const school = items.filter((i) => i.scope === 'school');
+    const others = admin ? items.filter((i) => i.scope === 'custom') : [];
+    mount(body, h`
+      ${admin ? '' : h`<div class="banner info">School rewards are set by an Admin. A class offers all of them until its teacher chooses rewards on the class\u2019s <strong>Rewards</strong> tab. To add your own, use <a href="#/store" data-go="mine">My class rewards</a>.</div>`}
+      <div class="card">${admin ? h`<div class="row end mb10"><button class="btn primary" id="new">Add school reward</button></div>` : ''}
+        ${school.length ? h`<div class="table-wrap"><table><thead><tr><th></th><th>Reward</th><th class="num">Price</th><th class="num">Stock</th><th class="num">Limit per student</th><th>Status</th>${admin ? h`<th></th>` : ''}</tr></thead><tbody>
+        ${school.map((i) => h`<tr><td>${i.emoji || ''}</td><td><strong>${i.name}</strong><div class="muted small">${i.description || ''}</div></td><td class="num">${i.price}</td><td class="num">${stockText(i)}</td><td class="num">${i.max_per_student ?? '\u2014'}</td>
+          <td>${statusChip(i)}</td>${admin ? h`<td><button class="btn small" data-edit="${i.id}">Edit</button></td>` : ''}</tr>`)}</tbody></table></div>`
+          : h`<div class="empty"><strong>No school rewards yet</strong>${admin ? 'Add something every class can offer.' : 'An Admin can add some.'}</div>`}</div>
+      ${others.length ? h`<div class="card"><h2>Teachers\u2019 class rewards</h2><p class="muted">Only the teacher who made each one, and their classes, can use it.</p>
+        <div class="table-wrap"><table><thead><tr><th></th><th>Reward</th><th>Teacher</th><th class="num">Price</th><th>Used in</th><th>Status</th></tr></thead><tbody>
+        ${others.map((i) => h`<tr><td>${i.emoji || ''}</td><td>${i.name}</td><td>${i.owner_name}</td><td class="num">${i.price}</td><td class="small">${i.classes.map((c) => c.name).join(', ') || '\u2014'}</td><td>${statusChip(i)}</td></tr>`)}</tbody></table></div></div>` : ''}`);
+    const nw = $('#new', body);
+    if (nw) nw.addEventListener('click', () => itemForm(null, 'school', again));
+    $$('[data-edit]', body).forEach((b) => b.addEventListener('click', () => itemForm(school.find((x) => String(x.id) === b.dataset.edit), 'school', again)));
+    const go = $('[data-go]', body);
+    if (go) go.addEventListener('click', (e) => { e.preventDefault(); state.storeTab = 'mine'; again(); });
+    return;
+  }
+
+  if (tab === 'mine') {
+    const { items } = await api('/store/items');
+    const mine = items.filter((i) => i.mine);
+    mount(body, h`
+      <div class="card"><div class="row jc-between mb10"><div><h2 class="m0">My class rewards</h2>
+        <p class="muted m0">Rewards only your classes can offer. After adding one, switch it on in a class\u2019s <strong>Rewards</strong> tab.</p></div>
+        <button class="btn primary" id="new">Add a class reward</button></div>
+        ${mine.length ? h`<div class="table-wrap"><table><thead><tr><th></th><th>Reward</th><th class="num">Price</th><th class="num">Stock</th><th class="num">Limit per student</th><th>On in these classes</th><th>Status</th><th></th></tr></thead><tbody>
+        ${mine.map((i) => h`<tr><td>${i.emoji || ''}</td><td><strong>${i.name}</strong><div class="muted small">${i.description || ''}</div></td><td class="num">${i.price}</td><td class="num">${stockText(i)}</td><td class="num">${i.max_per_student ?? '\u2014'}</td>
+          <td>${i.classes.length ? h`<div class="chips">${i.classes.map((c) => h`<a class="chip gray" href="#/class/${c.id}">${c.name}${c.period ? ' (P' + c.period + ')' : ''}</a>`)}</div>` : h`<span class="muted small">Not on in any class yet</span>`}</td>
+          <td>${statusChip(i)}</td><td><button class="btn small" data-edit="${i.id}">Edit</button></td></tr>`)}</tbody></table></div>`
+          : h`<div class="empty"><strong>No class rewards yet</strong>Add a reward that only your classes can buy, like \u201cFive minutes of extra recess\u201d or \u201cPick the warm-up song.\u201d</div>`}</div>`);
+    $('#new', body).addEventListener('click', () => itemForm(null, 'mine', again));
+    $$('[data-edit]', body).forEach((b) => b.addEventListener('click', () => itemForm(mine.find((x) => String(x.id) === b.dataset.edit), 'mine', again)));
     return;
   }
 
@@ -235,7 +273,7 @@ export async function storeStaff(el) {
   mount(body, h`<div class="card"><div class="row mb12"><label for="os" class="hidden">Status</label>
     <select class="maxw220" id="os">${['pending', 'fulfilled', 'cancelled', 'all'].map((s) => h`<option value="${s}" ${s === status ? raw('selected') : ''}>${s[0].toUpperCase() + s.slice(1)}</option>`)}</select></div>
     ${orders.length ? h`<div class="table-wrap"><table><thead><tr><th>Ordered</th><th>Student</th><th>Gr</th><th>Homeroom</th><th>Item</th><th class="num">Paid</th><th>Status</th><th></th></tr></thead><tbody>
-      ${orders.map((o) => h`<tr><td class="nowrap">${fmtDT(o.created_at)}</td><td>${o.last_name}, ${o.first_name}</td><td>${o.grade}</td><td>${o.homeroom_teacher || ''}</td><td>${o.emoji || ''} ${o.item}</td><td class="num">${o.price_paid}</td>
+      ${orders.map((o) => h`<tr><td class="nowrap">${fmtDT(o.created_at)}</td><td>${o.last_name}, ${o.first_name}</td><td>${o.grade}</td><td>${o.homeroom_teacher || ''}</td><td>${o.emoji || ''} ${o.item}${o.custom ? h` <span class="chip gray">Class reward</span>` : ''}</td><td class="num">${o.price_paid}</td>
         <td><span class="chip ${o.status === 'fulfilled' ? 'ok' : o.status === 'cancelled' ? 'gray' : 'step'}">${o.status}</span></td>
         <td class="nowrap">${o.status === 'pending' ? h`<button class="btn small primary" data-ful="${o.id}">Mark fulfilled</button> <button class="btn small danger" data-can="${o.id}">Cancel</button>` : ''}</td></tr>`)}</tbody></table></div>`
       : h`<div class="empty"><strong>No ${status === 'all' ? '' : status} orders</strong>Orders from students will show up here.</div>`}</div>`);

@@ -391,3 +391,17 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
 .grow-220{flex:1;min-width:220px}
 
 .seat-grid:not(.editing) .cell { border-color: #3a3d44; }
+
+.check-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: 8px 14px; max-height: 240px; overflow-y: auto; padding: 10px 12px; background: var(--field); border: 1px solid var(--border); border-radius: 10px; }
+.check-grid .check { font-size: 14px; }
+.btn.plus-btn { background: #238a5a; border-color: #238a5a; }
+.btn.plus-btn:hover { background: #2aa56b; }
+
+.reward-list { display: grid; }
+.reward-row { display: grid; grid-template-columns: auto auto minmax(0, 1fr) auto auto; gap: 12px; align-items: center; padding: 10px 4px; border-bottom: 1px solid #44474e; cursor: pointer; margin: 0; color: var(--text); font-size: 15px; font-weight: 500; }
+.reward-row:last-child { border-bottom: 0; }
+.reward-row:hover { background: #3c3f46; }
+.rw-em { font-size: 24px; }
+.rw-main { display: grid; min-width: 0; }
+.rw-stock { min-width: 64px; text-align: right; }
+.chip.a-chip { text-decoration: none; }
