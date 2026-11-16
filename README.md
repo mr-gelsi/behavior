@@ -7,7 +7,8 @@ A private website for a middle school (grades 6–8) to:
 - list the students who **don't qualify for Rewards Day** (any Step 2 or higher, or two or more Step 1s),
 - award or fine **P5 points** (Prompt, Prepared, Positive, Polite, Productive), optionally adding a step with a fine,
 - run a **P5 store** where students spend points,
-- let students **reserve a seat** in Rewards Day activities that teachers create, while non-qualifiers are **assigned to rooms automatically**.
+- let students **reserve a seat** in Rewards Day activities that teachers create, while non-qualifiers are **assigned to rooms automatically**,
+- let teachers create **classes** with a join code, build a drag-and-drop **seating chart**, and award or fine P5 points right from each student's desk.
 
 It runs on **Cloudflare** (a Worker plus a D1 database) and deploys from **GitHub**. There is no server to maintain.
 
@@ -21,7 +22,7 @@ It runs on **Cloudflare** (a Worker plus a D1 database) and deploys from **GitHu
 |---|---|
 | `public/` | The website pages (HTML, CSS, JavaScript). No third-party code. |
 | `src/` | The server code (Cloudflare Worker): sign-in, API, Rewards Day engine. |
-| `migrations/` | The database tables (`0001`) and starter data (`0002`). |
+| `migrations/` | The database tables (`0001`), starter data (`0002`), and classes and seating charts (`0003`). |
 | `templates/` | Blank CSV files showing the import formats. |
 | `test/` | Automated tests (`npm test`) and a local demo server. |
 | `wrangler.jsonc` | Cloudflare settings. You edit **one line** here (the database ID). |
@@ -43,11 +44,13 @@ You need a free **GitHub** account and a **Cloudflare** account. Turn on two-fac
 
 ### Step 2: Create the database
 
+> Run **all three** files in `migrations/` (`0001`, `0002`, `0003`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
+
 1. In the Cloudflare dashboard, open **Storage & databases → D1** and click **Create database**. Name it exactly `behavior-tracker`.
 2. Copy its **Database ID**.
 3. In GitHub, open `wrangler.jsonc`, click the pencil (edit), replace `REPLACE_WITH_YOUR_D1_DATABASE_ID` with the ID, and **Commit changes**. (The ID isn't a secret.)
 4. Create the tables, using **one** of these:
-   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then paste `migrations/0002_seed.sql` and run it. If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
+   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then do the same with `0002_seed.sql` and `0003_classes.sql`. (If a pasted file stops with "No SQL statements detected", it still has `--` comment lines. Delete those lines and try again.) If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
    - **From a computer with Node installed:** in this folder run `npm install`, `npx wrangler login`, then `npm run db:migrate:remote`.
 
 ### Step 3: Connect GitHub to Cloudflare
@@ -87,9 +90,29 @@ To make a random string on a Mac or Linux computer: `openssl rand -base64 48`. A
 - **Rewards Day:** an Admin creates the day (**Rewards Day → New Rewards Day**), picking the reward period that decides who qualifies and when booking opens and closes. Teachers add activities (a name, room, number of spots, P5 cost) and Admins or teachers add **non-qualifier rooms**. An Admin clicks **Open booking**. When booking closes, anyone who doesn't qualify and has no room is placed automatically. A red banner appears if the rooms are too small.
 - **Students:** sign in with Student ID and PIN to see their points, shop, and reserve a seat.
 
+### Classes and seating charts
+
+1. **My Classes → New class.** Give it a name and period. Every class gets a 6-character **class code** (no look-alike letters such as 0/O or 1/I).
+2. Students sign in, open **My Classes**, and type the code. You can also add students yourself (**Students** tab, including a whole homeroom at once). Turn joining off in **Settings** once everyone is in, or make a new code at any time.
+3. **Seating chart → Edit layout.**
+   - Click an empty spot to add a desk, and drag desks to move them (or focus a desk and use the arrow keys). Dropping a desk on another one swaps them.
+   - Pick a student on the right and click a desk to seat them, or use **Seat A–Z**.
+   - Change the grid size, add a teacher desk, then click **Save layout**. Leaving the page with unsaved changes asks first.
+4. **Copy a layout:** in Edit layout, choose another of your classes (archived ones included) and click **Copy layout here**. Tick the box to also seat students who are in both classes.
+5. **Award & fine mode:** each desk has **+** and **−** buttons. **+** opens a window where you pick an amount, then tap what it's for (Prompt, Prepared, Positive, Polite, Productive) and the points are given. **−** works the same way, with the optional "Also add a step" box. You can also print the chart.
+6. On the **P5 Points** page, **Add a whole class or homeroom** now includes your classes.
+
+Teachers see only their own classes. Admins can open any class. Students never see classmates or the seating chart.
+
+### Updating a site that is already running
+
+1. Upload the new files to GitHub (replace the old ones). Cloudflare redeploys by itself.
+2. In the D1 Console, run `migrations/0003_classes.sql` once. Nothing else in the database changes.
+
 ### New school year checklist
 1. **Admin → Reward periods:** add the new dates.
-2. **Admin → Roster:** import the new roster and tick "Make students who are not in this file inactive". History is kept.
+2. **My Classes:** archive last year's classes and create this year's. Use **Copy layout** to reuse a seating chart.
+3. **Admin → Roster:** import the new roster and tick "Make students who are not in this file inactive". History is kept.
 3. Generate PINs for new students.
 4. Old steps stay in place, so the three-year comparison keeps working.
 
@@ -120,7 +143,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 139 automated checks
+npm test                           # 181 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.

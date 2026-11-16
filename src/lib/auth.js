@@ -54,12 +54,12 @@ export const endAllSessions = (env, type, ref) =>
 // ---- Login throttling (per account and per IP) --------------------------------
 const WINDOW_MS = 15 * 60 * 1000;
 
-export async function assertNotLocked(env, keys, limits) {
+export async function assertNotLocked(env, keys, limits, message) {
   const since = Date.now() - WINDOW_MS;
   for (let i = 0; i < keys.length; i++) {
     const r = await one(env, 'SELECT COUNT(*) AS c FROM login_attempts WHERE key = ? AND ts > ?', keys[i], since);
     if (r.c >= limits[i]) {
-      throw new HttpError(429, 'Too many failed sign-in attempts. Wait 15 minutes and try again, or ask an admin to reset it.');
+      throw new HttpError(429, message || 'Too many failed sign-in attempts. Wait 15 minutes and try again, or ask an admin to reset it.');
     }
   }
 }

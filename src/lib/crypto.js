@@ -103,3 +103,16 @@ export async function constantTimeStringEqual(a, b) {
   const [ha, hb] = await Promise.all([sha256Hex(String(a)), sha256Hex(String(b))]);
   return timingSafeEqual(enc.encode(ha), enc.encode(hb));
 }
+
+// Class join codes: 6 characters, no look-alikes (no 0/O, 1/I/L), unbiased random choice.
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+export function randomCode(len = 6) {
+  const limit = Math.floor(256 / CODE_ALPHABET.length) * CODE_ALPHABET.length;
+  let out = '';
+  const b = new Uint8Array(1);
+  while (out.length < len) {
+    crypto.getRandomValues(b);
+    if (b[0] < limit) out += CODE_ALPHABET[b[0] % CODE_ALPHABET.length];
+  }
+  return out;
+}

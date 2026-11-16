@@ -1,9 +1,10 @@
-import { state, api, h, raw, mount, $, $$, toast, fail, modal } from './core.js';
+import { state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox } from './core.js';
 import * as S from './views-staff.js';
 import * as P from './views-p5.js';
 import { rewardsStaff } from './views-rewards.js';
 import { admin, pinSheet } from './views-admin.js';
 import { studentHome, studentStore, studentSeat } from './views-student.js';
+import { classesList, classDetail, studentClasses } from './views-classes.js';
 
 const root = document.getElementById('root');
 
@@ -64,9 +65,9 @@ const STAFF_NAV = [
   ['dashboard', '\ud83d\udcca', 'Dashboard'], ['record', '\u270f\ufe0f', 'Record Steps'],
   ['grade/6', '6\ufe0f\u20e3', '6th Grade'], ['grade/7', '7\ufe0f\u20e3', '7th Grade'], ['grade/8', '8\ufe0f\u20e3', '8th Grade'],
   ['monthly', '\ud83d\udcc5', 'Monthly Report'], ['reward-report', '\ud83c\udf81', 'Reward Day Report'],
-  ['p5', '\u2b50', 'P5 Points'], ['store', '\ud83d\udecd\ufe0f', 'Store'], ['rewards', '\ud83c\udf9f\ufe0f', 'Rewards Day'],
+  ['p5', '\u2b50', 'P5 Points'], ['store', '\ud83d\udecd\ufe0f', 'Store'], ['rewards', '\ud83c\udf9f\ufe0f', 'Rewards Day'], ['classes', '\ud83c\udfeb', 'My Classes'],
 ];
-const STUDENT_NAV = [['me', '\ud83c\udfe0', 'My P5'], ['shop', '\ud83d\udecd\ufe0f', 'Store'], ['seat', '\ud83c\udf9f\ufe0f', 'Reserve a Seat']];
+const STUDENT_NAV = [['me', '\ud83c\udfe0', 'My P5'], ['shop', '\ud83d\udecd\ufe0f', 'Store'], ['seat', '\ud83c\udf9f\ufe0f', 'Reserve a Seat'], ['classes', '\ud83d\udd11', 'My Classes']];
 
 function shell() {
   const me = state.me;
@@ -93,10 +94,10 @@ function shell() {
 const STAFF_ROUTES = {
   dashboard: (el) => S.dashboard(el), record: (el) => S.record(el), monthly: (el) => S.monthly(el),
   'reward-report': (el) => S.rewardReport(el), p5: (el) => P.p5(el), store: (el) => P.storeStaff(el),
-  rewards: (el) => rewardsStaff(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
+  rewards: (el) => rewardsStaff(el), classes: (el) => classesList(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
   password: (el) => passwordPage(el),
 };
-const STUDENT_ROUTES = { me: studentHome, shop: studentStore, seat: studentSeat };
+const STUDENT_ROUTES = { me: studentHome, shop: studentStore, seat: studentSeat, classes: studentClasses };
 
 async function route() {
   if (!state.me) return;
@@ -104,11 +105,14 @@ async function route() {
   const path = (location.hash.replace(/^#\/?/, '').split('?')[0]) || (staff ? 'dashboard' : 'me');
   const page = $('#page', root);
   if (!page) return;
-  $$('.nav a', root).forEach((a) => a.classList.toggle('active', a.dataset.path === path || (path === 'pin-sheet' && a.dataset.path === 'admin')));
+  state.leaveGuard = null; window.onbeforeunload = null;
+  $$('.nav a', root).forEach((a) => a.classList.toggle('active', a.dataset.path === path || (path === 'pin-sheet' && a.dataset.path === 'admin') || (path.startsWith('class/') && a.dataset.path === 'classes')));
   try {
     if (staff) {
       const g = /^grade\/([678])$/.exec(path);
+      const cd = /^class\/(\d+)$/.exec(path);
       if (g) await S.grade(page, Number(g[1]));
+      else if (cd) await classDetail(page, Number(cd[1]));
       else if (STAFF_ROUTES[path] && !(path === 'admin' && state.me.user.role !== 'admin') && !(path === 'pin-sheet' && state.me.user.role !== 'admin')) await STAFF_ROUTES[path](page);
       else location.hash = '#/dashboard';
     } else if (STUDENT_ROUTES[path]) await STUDENT_ROUTES[path](page);
@@ -145,6 +149,14 @@ async function boot() {
   route();
 }
 
+document.addEventListener('click', async (e) => {
+  const a = e.target.closest && e.target.closest('a[href^="#/"]');
+  if (!a || !state.leaveGuard) return;
+  const msg = state.leaveGuard();
+  if (!msg) return;
+  e.preventDefault();
+  if (await confirmBox(msg, { ok: 'Leave without saving', danger: true })) { state.leaveGuard = null; window.onbeforeunload = null; location.hash = a.getAttribute('href'); }
+}, true);
 window.addEventListener('hashchange', route);
 window.addEventListener('session-expired', () => { if (state.me) { state.me = null; showLogin('You were signed out. Please sign in again.'); } });
 boot();

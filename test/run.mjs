@@ -417,6 +417,129 @@ ok(r.data.error_count === 1, 'school-year override rejects dates from another ye
 r = await call(teacher, 'GET', '/api/reports/monthly?year=2026-27');
 ok(r.data.has_data['2024-25'] === true && r.data.data['2024-25'][10] === 1, 'monthly report now shows imported history', r.data.data['2024-25']);
 
+
+// ------------------------------------------------------------------------------------
+section('Classes, join codes, and seating charts');
+r = await call(teacher, 'POST', '/api/classes', { name: 'Period 3 Social Studies', period: '3' });
+ok(r.data.ok && /^[A-HJ-NP-Z2-9]{6}$/.test(r.data.code), 'teacher creates a class with a 6-character code (no look-alike letters)', r.data);
+const cls1 = r.data.id; let code1 = r.data.code;
+r = await call(teacher, 'POST', '/api/classes', { name: 'Period 5 Social Studies', period: '5' });
+const cls2 = r.data.id;
+r = await call(admin, 'POST', '/api/classes', { name: 'Admin class' });
+const clsAdmin = r.data.id;
+ok(db.db.prepare('SELECT COUNT(DISTINCT code) c FROM classes').get().c === 3, 'every class has its own code');
+r = await call(teacher, 'GET', '/api/classes/' + clsAdmin);
+ok(r.status === 404, "a teacher can't open another teacher's class");
+r = await call(teacher, 'GET', '/api/classes');
+ok(r.data.classes.length === 2 && r.data.classes.every((x) => x.name.startsWith('Period')), 'teachers only list their own classes');
+r = await call(admin, 'GET', '/api/classes');
+ok(r.data.classes.length === 3, 'admin lists every class');
+r = await call(admin, 'GET', '/api/classes/' + cls1);
+ok(r.status === 200 && r.data.class.code === code1, 'admin can open any class');
+r = await call(s1001, 'GET', '/api/classes');
+ok(r.status === 403, 'students cannot use staff class routes');
+
+section('Joining with a code');
+r = await call(s1001, 'POST', '/api/student/classes/join', { code: 'ZZZZZZ' });
+ok(r.status === 400, 'wrong code rejected');
+const spaced = code1.toLowerCase().slice(0, 3) + ' - ' + code1.slice(3).toLowerCase();
+r = await call(s1001, 'POST', '/api/student/classes/join', { code: spaced });
+ok(r.data.ok && r.data.already === false && r.data.class.name === 'Period 3 Social Studies' && r.data.class.teacher === 'Tess Teacher', 'student joins (code is case-, space-, and hyphen-insensitive)', r.data);
+r = await call(s1001, 'POST', '/api/student/classes/join', { code: code1 });
+ok(r.data.ok && r.data.already === true, 'joining twice is harmless');
+r = await call(teacher, 'PATCH', `/api/classes/${cls1}`, { join_open: false });
+r = await call(s2001, 'POST', '/api/student/classes/join', { code: code1 });
+ok(r.status === 400, 'a class with joining closed refuses new students');
+r = await call(teacher, 'PATCH', `/api/classes/${cls1}`, { join_open: true });
+r = await call(teacher, 'POST', `/api/classes/${cls1}/regenerate-code`, {});
+const oldCode = code1; code1 = r.data.code;
+ok(code1 !== oldCode && /^[A-HJ-NP-Z2-9]{6}$/.test(code1), 'teacher can make a new code');
+r = await call(s2001, 'POST', '/api/student/classes/join', { code: oldCode });
+ok(r.status === 400, 'the old code stops working');
+r = await call(s2001, 'POST', '/api/student/classes/join', { code: code1 });
+ok(r.data.ok, 'the new code works');
+r = await call(teacher, 'PATCH', `/api/classes/${cls2}`, { archived: true });
+const cls2code = db.db.prepare('SELECT code FROM classes WHERE id=?').get(cls2).code;
+r = await call(s2002, 'POST', '/api/student/classes/join', { code: cls2code });
+ok(r.status === 400, 'archived classes cannot be joined');
+await call(teacher, 'PATCH', `/api/classes/${cls2}`, { archived: false });
+for (let i = 0; i < 10; i++) await call(s3002, 'POST', '/api/student/classes/join', { code: 'QQQQQ' + i });
+r = await call(s3002, 'POST', '/api/student/classes/join', { code: code1 });
+ok(r.status === 429, 'guessing codes locks the student out (even for the right code)');
+db.db.exec("DELETE FROM login_attempts WHERE key LIKE 'join:%'");
+r = await call(s1001, 'GET', '/api/student/classes');
+ok(r.data.classes.length === 1 && r.data.classes[0].teacher === 'Tess Teacher', 'student sees the classes they joined');
+
+section('Class members');
+r = await call(teacher, 'POST', `/api/classes/${cls1}/members`, { student_ids: [1002, 1003, 2002, 2001] });
+ok(r.data.added === 3, 'teacher adds students by hand (already-joined ones are not duplicated)', r.data);
+r = await call(teacher, 'POST', `/api/classes/${cls1}/members`, { student_ids: [424242] });
+ok(r.status === 400, 'unknown student rejected');
+r = await call(teacher, 'GET', '/api/classes/' + cls1);
+ok(r.data.members.length === 5 && r.data.members.every((m) => typeof m.balance === 'number'), 'class lists five members with P5 balances', r.data.members.length);
+
+section('Seating layout');
+const desks1 = [
+  { x: 0, y: 0, kind: 'teacher' },
+  { x: 1, y: 1, kind: 'desk', student_id: 1001 },
+  { x: 2, y: 1, kind: 'desk', student_id: 1002 },
+  { x: 3, y: 1, kind: 'desk', student_id: 1003 },
+  { x: 1, y: 2, kind: 'desk', student_id: 2001 },
+  { x: 2, y: 2, kind: 'desk' },
+];
+const bad1 = [
+  ['desk outside the grid', { cols: 4, rows: 3, desks: [{ x: 4, y: 0, kind: 'desk' }] }],
+  ['two desks in one spot', { cols: 6, rows: 4, desks: [{ x: 1, y: 1, kind: 'desk' }, { x: 1, y: 1, kind: 'desk' }] }],
+  ['student not in this class', { cols: 6, rows: 4, desks: [{ x: 1, y: 1, kind: 'desk', student_id: 3001 }] }],
+  ['same student at two desks', { cols: 6, rows: 4, desks: [{ x: 1, y: 1, kind: 'desk', student_id: 1001 }, { x: 2, y: 1, kind: 'desk', student_id: 1001 }] }],
+  ['student at a teacher desk', { cols: 6, rows: 4, desks: [{ x: 1, y: 1, kind: 'teacher', student_id: 1001 }] }],
+  ['grid too big', { cols: 17, rows: 4, desks: [] }],
+  ['too many desks', { cols: 16, rows: 12, desks: Array.from({ length: 81 }, (_, i) => ({ x: i % 16, y: Math.floor(i / 16), kind: 'desk' })) }],
+];
+for (const [name, body] of bad1) {
+  r = await call(teacher, 'PUT', `/api/classes/${cls1}/layout`, body);
+  ok(r.status === 400, 'layout rejected: ' + name, r.status);
+}
+r = await call(teacher, 'PUT', `/api/classes/${cls1}/layout`, { cols: 6, rows: 4, desks: desks1 });
+ok(r.data.ok && r.data.desks === 6, 'teacher saves a layout');
+r = await call(teacher, 'GET', '/api/classes/' + cls1);
+ok(r.data.class.grid_cols === 6 && r.data.class.grid_rows === 4 && r.data.desks.length === 6, 'saved layout reads back with its grid size');
+ok(r.data.desks.find((d) => d.x === 1 && d.y === 1).student_id === 1001 && r.data.desks.find((d) => d.kind === 'teacher'), 'seats and the teacher desk are kept');
+r = await call(teacher, 'PUT', `/api/classes/${cls1}/layout`, { cols: 6, rows: 4, desks: [{ x: 1, y: 1, kind: 'desk', student_id: 1001 }, { x: 1, y: 1, kind: 'desk' }] });
+ok(r.status === 400 && db.db.prepare('SELECT COUNT(*) c FROM class_desks WHERE class_id=?').get(cls1).c === 6, 'a rejected save leaves the old layout untouched');
+const other = await call(admin, 'PUT', `/api/classes/${clsAdmin}/layout`, { cols: 4, rows: 3, desks: [{ x: 0, y: 0, kind: 'desk' }] });
+r = await call(teacher, 'PUT', `/api/classes/${clsAdmin}/layout`, { cols: 4, rows: 3, desks: [] });
+ok(other.data.ok && r.status === 404, "a teacher can't change another teacher's layout");
+
+section('Copying a layout between classes');
+r = await call(teacher, 'POST', `/api/classes/${cls2}/copy-layout`, { from_class_id: cls1 });
+ok(r.data.ok && r.data.desks === 6 && r.data.seated === 0, 'layout copies with desks only');
+let g = (await call(teacher, 'GET', '/api/classes/' + cls2)).data;
+ok(g.class.grid_cols === 6 && g.desks.length === 6 && g.desks.every((d) => d.student_id === null), 'copied layout has the same grid and empty desks');
+await call(teacher, 'POST', `/api/classes/${cls2}/members`, { student_ids: [1001, 1002, 3001] });
+r = await call(teacher, 'POST', `/api/classes/${cls2}/copy-layout`, { from_class_id: cls1, with_students: true });
+ok(r.data.seated === 2 && r.data.skipped === 2, 'copying with students seats only those in both classes', r.data);
+g = (await call(teacher, 'GET', '/api/classes/' + cls2)).data;
+ok(g.desks.find((d) => d.x === 1 && d.y === 1).student_id === 1001, 'shared students keep their seats');
+r = await call(teacher, 'POST', `/api/classes/${cls1}/copy-layout`, { from_class_id: cls1 });
+ok(r.status === 400, 'cannot copy a class onto itself');
+r = await call(teacher, 'POST', `/api/classes/${cls1}/copy-layout`, { from_class_id: clsAdmin });
+ok(r.status === 404, "cannot copy from someone else's class");
+r = await call(admin, 'POST', `/api/classes/${clsAdmin}/copy-layout`, { from_class_id: cls1 });
+await call(admin, 'PUT', `/api/classes/${clsAdmin}/layout`, { cols: 4, rows: 3, desks: [] });
+r = await call(teacher, 'POST', `/api/classes/${cls2}/copy-layout`, { from_class_id: cls2 });
+const emptyCls = (await call(teacher, 'POST', '/api/classes', { name: 'Empty room' })).data.id;
+r = await call(teacher, 'POST', `/api/classes/${cls2}/copy-layout`, { from_class_id: emptyCls });
+ok(r.status === 400, 'cannot copy from a class with no layout');
+
+section('Leaving and removing');
+r = await call(teacher, 'DELETE', `/api/classes/${cls1}/members/1003`);
+ok(r.data.ok && db.db.prepare('SELECT student_id FROM class_desks WHERE class_id=? AND x=3 AND y=1').get(cls1).student_id === null, 'removing a student also empties their desk');
+r = await call(s1001, 'DELETE', `/api/student/classes/${cls1}`);
+ok(r.data.ok && !db.db.prepare('SELECT 1 FROM class_members WHERE class_id=? AND student_id=1001').get(cls1) && db.db.prepare('SELECT student_id FROM class_desks WHERE class_id=? AND x=1 AND y=1').get(cls1).student_id === null, 'a student can leave, and their desk empties');
+r = await call(teacher, 'POST', '/api/p5', { mode: 'award', student_ids: [1002], category_id: 1, amount: 1 });
+ok(r.data.ok, 'awarding from a class desk uses the normal P5 award');
+
 // ------------------------------------------------------------------------------------
 section('Export and audit');
 r = await call(admin, 'GET', '/api/admin/export?table=students');

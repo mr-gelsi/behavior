@@ -22,6 +22,10 @@ export const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
 export function applyDynamic(root) {
   $$('[data-w]', root).forEach((e) => { e.style.width = Math.max(0, Math.min(100, Number(e.dataset.w))) + '%'; });
   $$('[data-h]', root).forEach((e) => { e.style.height = Math.max(0, Math.min(100, Number(e.dataset.h))) + '%'; });
+  // Seating grid: positions and sizes also go through the CSS object model.
+  $$('[data-gx]', root).forEach((e) => { e.style.gridColumn = String(Number(e.dataset.gx) + 1); });
+  $$('[data-gy]', root).forEach((e) => { e.style.gridRow = String(Number(e.dataset.gy) + 1); });
+  $$('[data-cols]', root).forEach((e) => { e.style.setProperty('--cols', e.dataset.cols); e.style.setProperty('--rows', e.dataset.rows); });
 }
 export function mount(el, content) {
   el.innerHTML = content instanceof Raw ? content.s : String(content);

@@ -10,6 +10,7 @@ import './routes/p5.js';
 import './routes/store.js';
 import './routes/rewards.js';
 import './routes/student.js';
+import './routes/classes.js';
 import './routes/admin.js';
 
 const CSP = [

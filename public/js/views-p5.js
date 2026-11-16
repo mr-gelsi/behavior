@@ -11,7 +11,7 @@ const PERIODS = ['', '1', '2', '3', '4', '5', '6', '7'];
 // ======================================================================================
 export async function p5(el) {
   loading(el);
-  const [cats, hr] = await Promise.all([loadCategories(), api('/homerooms')]);
+  const [cats, hr, cl] = await Promise.all([loadCategories(), api('/homerooms'), api('/classes')]);
   const me = state.me;
   const maxAmt = me.user.role === 'admin' ? 1000 : me.settings.teacher_max_p5;
   const form = state.p5form || (state.p5form = { mode: 'award', cat: null, amount: 5 });
@@ -25,9 +25,10 @@ export async function p5(el) {
         <button type="button" data-mode="award">\ud83c\udf89 Award points</button><button type="button" data-mode="fine">\ud83d\udeab Fine points</button></div></div>
 
       <div class="field"><label>Students</label><div id="picker"></div>
-        ${hr.homerooms.length ? h`<div class="row mt8"><select class="maxw340" id="hr" aria-label="Add a whole class"><option value="">Add a whole homeroom\u2026</option>
-          ${hr.homerooms.map((x) => h`<option value="${x.grade}|${x.homeroom_teacher}">Grade ${x.grade} \u2022 ${x.homeroom_teacher} (${x.n})</option>`)}</select>
-          <button type="button" class="btn small" id="addhr">Add class</button></div>` : ''}
+        ${hr.homerooms.length || cl.classes.length ? h`<div class="row mt8"><select id="hr" aria-label="Add a whole class or homeroom" class="maxw340"><option value="">Add a whole class or homeroom\u2026</option>
+          ${cl.classes.length ? h`<optgroup label="My classes">${cl.classes.map((x) => h`<option value="class|${x.id}">${x.name}${x.period ? ' (P' + x.period + ')' : ''} \u2022 ${x.members}</option>`)}</optgroup>` : ''}
+          ${hr.homerooms.length ? h`<optgroup label="Homerooms">${hr.homerooms.map((x) => h`<option value="${x.grade}|${x.homeroom_teacher}">Grade ${x.grade} \u2022 ${x.homeroom_teacher} (${x.n})</option>`)}</optgroup>` : ''}</select>
+          <button type="button" class="btn small" id="addhr">Add group</button></div>` : ''}
       </div>
 
       <div class="field"><label>What is it for?</label>
@@ -94,7 +95,9 @@ export async function p5(el) {
     if (!v) return;
     const [grade, hrName] = v.split('|');
     try {
-      const { students } = await api(`/homerooms/students?grade=${grade}&homeroom=${encodeURIComponent(hrName)}`);
+      const { students } = grade === 'class'
+        ? { students: (await api('/classes/' + hrName)).members }
+        : await api(`/homerooms/students?grade=${grade}&homeroom=${encodeURIComponent(hrName)}`);
       picker.addMany(students);
       toast(`Added ${students.length} students.`);
     } catch (e) { fail(e); }
