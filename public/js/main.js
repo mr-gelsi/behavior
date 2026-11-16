@@ -70,14 +70,119 @@ const STAFF_NAV = [
 ];
 const STUDENT_NAV = [['me', '\ud83c\udfe0', 'My P5'], ['shop', '\ud83d\udecd\ufe0f', 'Store'], ['seat', '\ud83c\udf9f\ufe0f', 'Reserve a Seat'], ['classes', '\ud83d\udd11', 'My Classes']];
 
+function defaultNav(me) {
+  return me.type === 'staff' ? [...STAFF_NAV, ...(me.user.role === 'admin' ? [['admin', '\u2699\ufe0f', 'Admin']] : [])] : STUDENT_NAV;
+}
+// The person's saved order first; anything they haven't placed (for example a tab added later) follows in the default order.
+function orderedNav(me) {
+  const base = defaultNav(me);
+  const byPath = new Map(base.map((n) => [n[0], n]));
+  const out = [];
+  for (const p of (me.prefs && me.prefs.nav_order) || []) if (byPath.has(p)) { out.push(byPath.get(p)); byPath.delete(p); }
+  for (const n of base) if (byPath.has(n[0])) out.push(n);
+  return out;
+}
+
+let navDraft = null; // the order being edited while "Reorder menu" is on
+
+function currentPath() {
+  return (location.hash.replace(/^#\/?/, '').split('?')[0]) || (state.me && state.me.type === 'staff' ? 'dashboard' : 'me');
+}
+function markActive() {
+  const path = currentPath();
+  $$('.nav a', root).forEach((a) => a.classList.toggle('active', a.dataset.path === path || (path === 'pin-sheet' && a.dataset.path === 'admin') || (path.startsWith('class/') && a.dataset.path === 'classes')));
+}
+function drawNav(focusSel) {
+  const nav = $('#nav', root);
+  const tools = $('#navtools', root);
+  const bar = $('#navbar', root);
+  if (!navDraft) {
+    mount(bar, h``);
+    mount(nav, h`${orderedNav(state.me).map(([path, ico, label]) => h`<a href="#/${path}" data-path="${path}"><span class="ico">${ico}</span>${label}</a>`)}`);
+    mount(tools, h`<button type="button" class="link-btn" id="navEdit">\u2195 Reorder menu</button>`);
+    markActive();
+    return;
+  }
+  mount(nav, h`${navDraft.map(([path, ico, label], i) => h`<div class="nav-row" data-path="${path}">
+      <span class="nav-handle" title="Drag to move" aria-hidden="true">\u22ee\u22ee</span><span class="ico">${ico}</span><span class="nav-label" title="${label}">${label}</span>
+      <span class="nav-move"><button type="button" data-up="${path}" aria-label="Move ${label} up" ${i === 0 ? raw('disabled') : ''}>\u25b2</button><button type="button" data-down="${path}" aria-label="Move ${label} down" ${i === navDraft.length - 1 ? raw('disabled') : ''}>\u25bc</button></span></div>`)}`);
+  mount(tools, h``);
+  mount(bar, h`<div class="row"><button type="button" class="btn small primary" id="navSave">Save</button><button type="button" class="btn small" id="navReset">Reset</button><button type="button" class="btn small" id="navCancel">Cancel</button></div>
+    <p class="nav-help">Drag \u22ee\u22ee or use the arrows, then Save.</p>`);
+  if (focusSel) { const f = $(focusSel, nav); if (f && !f.disabled) f.focus(); }
+}
+
+function wireNavEditing() {
+  const side = $('#sidebar', root);
+  const moveItem = (from, to) => { if (from === to || from < 0 || to < 0 || to >= navDraft.length) return; const [it] = navDraft.splice(from, 1); navDraft.splice(to, 0, it); };
+  side.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.id === 'navEdit') { navDraft = orderedNav(state.me).map((n) => n.slice()); drawNav(); return; }
+    if (!navDraft) return;
+    if (b.id === 'navCancel') { navDraft = null; drawNav(); return; }
+    if (b.id === 'navReset') {
+      try { await api('/me/nav-order', { method: 'DELETE' }); state.me.prefs.nav_order = null; navDraft = null; drawNav(); toast('The menu is back to its original order.'); } catch (er) { fail(er); }
+      return;
+    }
+    if (b.id === 'navSave') {
+      try {
+        const r = await api('/me/nav-order', { method: 'PUT', body: { order: navDraft.map((n) => n[0]) } });
+        state.me.prefs.nav_order = r.order; navDraft = null; drawNav(); toast('Menu order saved.');
+      } catch (er) { fail(er); }
+      return;
+    }
+    const path = b.dataset.up || b.dataset.down;
+    if (path) {
+      const i = navDraft.findIndex((n) => n[0] === path);
+      moveItem(i, b.dataset.up ? i - 1 : i + 1);
+      drawNav(`[data-${b.dataset.up ? 'up' : 'down'}="${path}"]`);
+      if (!$(`[data-${b.dataset.up ? 'up' : 'down'}="${path}"]`, side) || $(`[data-${b.dataset.up ? 'up' : 'down'}="${path}"]`, side).disabled) { const o = $(`[data-${b.dataset.up ? 'down' : 'up'}="${path}"]`, side); if (o) o.focus(); }
+    }
+  });
+  // Drag a row by its handle (mouse, pen, or touch).
+  let drag = null;
+  side.addEventListener('pointerdown', (e) => {
+    const handle = e.target.closest('.nav-handle');
+    if (!handle || !navDraft || e.button > 0) return;
+    const rows = $$('.nav-row', side);
+    const row = handle.closest('.nav-row');
+    drag = { id: e.pointerId, row, from: rows.indexOf(row), sy: e.clientY, rects: rows.map((r) => r.getBoundingClientRect()) };
+    try { handle.setPointerCapture(e.pointerId); } catch { /* ignore */ }
+    row.classList.add('dragging');
+  });
+  const indexAt = (y, r) => { if (y <= r[0].top) return 0; for (let i = 0; i < r.length; i++) if (y >= r[i].top && y < r[i].bottom) return i; return r.length - 1; };
+  side.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.row.style.transform = `translateY(${e.clientY - drag.sy}px)`;
+    const rows = $$('.nav-row', side);
+    rows.forEach((r) => r.classList.remove('drop-before', 'drop-after'));
+    const to = indexAt(e.clientY, drag.rects);
+    if (to !== drag.from) rows[to].classList.add(to < drag.from ? 'drop-before' : 'drop-after');
+  });
+  const end = (e, cancel) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const d = drag;
+    drag = null;
+    d.row.style.transform = '';
+    const to = cancel ? d.from : indexAt(e.clientY, d.rects);
+    if (to !== d.from) { moveItem(d.from, to); drawNav(); }
+    else { d.row.classList.remove('dragging'); $$('.nav-row', side).forEach((r) => r.classList.remove('drop-before', 'drop-after')); }
+  };
+  side.addEventListener('pointerup', (e) => end(e, false));
+  side.addEventListener('pointercancel', (e) => end(e, true));
+}
+
 function shell() {
   const me = state.me;
   const staff = me.type === 'staff';
-  const nav = staff ? [...STAFF_NAV, ...(me.user.role === 'admin' ? [['admin', '\u2699\ufe0f', 'Admin']] : [])] : STUDENT_NAV;
+  navDraft = null;
   const who = staff ? me.user.role[0].toUpperCase() + me.user.role.slice(1) : 'Student';
   mount(root, h`<div class="app">
     <aside class="sidebar" id="sidebar" aria-label="Main navigation"><div class="brand"><span class="logo-tile"><img src="/logo.png" width="640" height="289" alt="Panther logo"></span><span>BEHAVIOR<br>TRACKER</span></div>
-      <nav class="nav">${nav.map(([path, ico, label]) => h`<a href="#/${path}" data-path="${path}"><span class="ico">${ico}</span>${label}</a>`)}</nav>
+      <div class="nav-edit-bar no-print" id="navbar"></div>
+      <nav class="nav" id="nav" aria-label="Pages"></nav>
+      <div class="nav-tools no-print" id="navtools"></div>
       <div class="sidebar-foot">${me.settings.school_name}<br>${staff ? h`<a class="c-inherit" href="#/password">Change password</a>` : ''}</div></aside>
     <div class="main">
       <header class="topbar"><div class="title"><button class="menu-btn" id="menu" aria-label="Open menu">\u2630</button><span class="title-text">Behavior Tracker Command Center</span></div>
@@ -85,6 +190,8 @@ function shell() {
           ${staff ? h`<label for="yearsel" class="hidden">School year</label><select class="year-select" id="yearsel">${me.years.map((y) => h`<option value="${y}" ${y === state.year ? raw('selected') : ''}>${y}</option>`)}</select>` : ''}
           <span class="muted role-label">${who}</span><button class="signout" id="signout">Sign out</button><span class="pill-status" id="sync-pill">\u2713 Synced</span></div></header>
       <main class="page" id="page" tabindex="-1"></main></div></div>`);
+  drawNav();
+  wireNavEditing();
   $('#menu', root).addEventListener('click', () => document.body.classList.toggle('menu-open'));
   $('#sidebar', root).addEventListener('click', (e) => { if (e.target.closest('a')) document.body.classList.remove('menu-open'); });
   $('#signout', root).addEventListener('click', async () => { try { await api('/logout', { method: 'POST', body: {} }); } catch { /* ignore */ } state.me = null; showLogin(); });
@@ -107,7 +214,7 @@ async function route() {
   const page = $('#page', root);
   if (!page) return;
   state.leaveGuard = null; window.onbeforeunload = null;
-  $$('.nav a', root).forEach((a) => a.classList.toggle('active', a.dataset.path === path || (path === 'pin-sheet' && a.dataset.path === 'admin') || (path.startsWith('class/') && a.dataset.path === 'classes')));
+  markActive();
   try {
     if (staff) {
       const g = /^grade\/([678])$/.exec(path);

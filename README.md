@@ -9,6 +9,8 @@ A private website for a middle school (grades 6–8) to:
 - run a **P5 store** where students spend points,
 - let students **reserve a seat** in Rewards Day activities that teachers create, while non-qualifiers are **assigned to rooms automatically**,
 - let each teacher choose which **rewards** each class can buy, including **custom rewards** only their classes can see,
+- let each person put their left-hand **menu in the order they like**,
+- give every class a **name spinner** and a one-click **class report** (printable, or spreadsheets),
 - let teachers create **classes** with a join code, build a drag-and-drop **seating chart**, and award or fine P5 points right from each student's desk.
 
 It runs on **Cloudflare** (a Worker plus a D1 database) and deploys from **GitHub**. There is no server to maintain.
@@ -23,7 +25,7 @@ It runs on **Cloudflare** (a Worker plus a D1 database) and deploys from **GitHu
 |---|---|
 | `public/` | The website pages (HTML, CSS, JavaScript). No third-party code. |
 | `src/` | The server code (Cloudflare Worker): sign-in, API, Rewards Day engine. |
-| `migrations/` | The database tables (`0001`), starter data (`0002`), and classes and seating charts (`0003`), class rewards (`0004`), and staff last names (`0005`). |
+| `migrations/` | The database tables (`0001`), starter data (`0002`), and classes and seating charts (`0003`), class rewards (`0004`), staff last names (`0005`), and menu order (`0006`). |
 | `templates/` | Blank CSV files showing the import formats. |
 | `test/` | Automated tests (`npm test`) and a local demo server. |
 | `wrangler.jsonc` | Cloudflare settings. You edit **one line** here (the database ID). |
@@ -45,13 +47,13 @@ You need a free **GitHub** account and a **Cloudflare** account. Turn on two-fac
 
 ### Step 2: Create the database
 
-> Run **all five** files in `migrations/` (`0001` to `0005`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
+> Run **all six** files in `migrations/` (`0001` to `0006`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
 
 1. In the Cloudflare dashboard, open **Storage & databases → D1** and click **Create database**. Name it exactly `behavior-tracker`.
 2. Copy its **Database ID**.
 3. In GitHub, open `wrangler.jsonc`, click the pencil (edit), replace `REPLACE_WITH_YOUR_D1_DATABASE_ID` with the ID, and **Commit changes**. (The ID isn't a secret.)
 4. Create the tables, using **one** of these:
-   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then do the same with `0002_seed.sql`, `0003_classes.sql`, `0004_class_rewards.sql`, and `0005_staff_last_name.sql`. (If a pasted file stops with "No SQL statements detected", it still has `--` comment lines. Delete those lines and try again.) If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
+   - **From the dashboard:** open your database → **Console**. Paste the full contents of `migrations/0001_schema.sql` and run it. Then do the same with `0002_seed.sql`, `0003_classes.sql`, `0004_class_rewards.sql`, `0005_staff_last_name.sql`, and `0006_user_prefs.sql`. (If a pasted file stops with "No SQL statements detected", it still has `--` comment lines. Delete those lines and try again.) If the console complains about a long paste, run it in smaller pieces, one `CREATE TABLE` at a time.
    - **From a computer with Node installed:** in this folder run `npm install`, `npx wrangler login`, then `npm run db:migrate:remote`.
 
 ### Step 3: Connect GitHub to Cloudflare
@@ -114,6 +116,29 @@ Teachers see only their own classes. Admins can open any class. Students never s
 - **Staff names** have separate **First name** and **Last name** boxes (**Admin → Staff users**), and the staff list is ordered by last name. Existing accounts get their last name filled in from their current name (the last word). Fix any that came out wrong, for example "Jr." or a two-word surname, by editing the account.
 - **Students** can only see classes they have joined, on their own **My Classes** page. They can't browse, list, or look up other classes, and a wrong, closed, or archived code all give the same answer.
 
+### Reorder your menu
+
+At the bottom of the left-hand menu, click **Reorder menu**. Drag a row by its **⋮⋮** handle, or use the **▲ ▼** arrows (they work with a keyboard and on phones). Click **Save** to keep it. **Reset** puts the menu back in its original order, and **Cancel** throws away your changes. The order is saved to your account, so it follows you to any computer or phone. Teachers, admins, and students each have their own order, and new tabs added in a future update appear at the end of your list.
+
+### Name spinner (in every class)
+
+Open a class and click **Name spinner**. The wheel fills itself with the class list.
+
+- Press **Spin the wheel**. The pick is chosen with secure random numbers, so every name is equally likely, and the wheel then turns to stop on it.
+- **Who is here?** Untick absent students. **Add other names** lets you type extra names (one per line) for guests, helpers, or groups.
+- **Take each winner off the wheel** (on by default) makes sure everyone gets a turn. **Reset wheel** starts over, and **Put back on the wheel** returns a name you didn't mean to remove.
+- Under the winner's name, **+ Award points** and **− Fine points** work the same as on the seating chart.
+- The wheel is just for the lesson: nothing about spins is stored. If your computer is set to reduce motion, the wheel picks instantly with no animation.
+
+### Class report (in every class)
+
+Open a class and click **Report**. Choose a school year (and optionally a date range) to get, for everyone in the class: step counts by level, P5 awarded, fined, spent and current balance, store orders, and their Rewards Day activity, plus the full step history, P5 history, and store orders.
+
+- **Print or save as PDF** opens a clean white, landscape printout (choose "Save as PDF" in the print window).
+- **Student summary, Step history, P5 points, Store orders** download as spreadsheets (CSV files that open in Excel or Google Sheets, including names with accents).
+- Reversed awards and fines are netted out, so the numbers match what students actually earned.
+- A teacher can only open reports for their own classes (Admins can open any). Store orders for another teacher's custom rewards are left out. Opening a report is recorded in the audit log.
+
 ### Rewards for each class
 
 - **School rewards** are the shared store items. Only an **Admin** adds or edits them (**Store → School rewards**).
@@ -127,7 +152,7 @@ Teachers see only their own classes. Admins can open any class. Students never s
 ### Updating a site that is already running
 
 1. Upload the new files to GitHub (replace the old ones). Cloudflare redeploys by itself.
-2. In the D1 Console, run any migration you haven't run yet, in order: `0003_classes.sql`, then `0004_class_rewards.sql`, then `0005_staff_last_name.sql`. Run each only once. Existing data is kept.
+2. In the D1 Console, run any migration you haven't run yet, in order: `0003_classes.sql`, then `0004_class_rewards.sql`, then `0005_staff_last_name.sql`, then `0006_user_prefs.sql`. Run each only once. Existing data is kept.
 
 ### New school year checklist
 1. **Admin → Reward periods:** add the new dates.
@@ -163,7 +188,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 260 automated checks
+npm test                           # 305 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.

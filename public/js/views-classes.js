@@ -1,6 +1,7 @@
 import {
-  state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, studentPicker, loadCategories, fmtDate, lastFirst,
+  state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, studentPicker, loadCategories, fmtDate, lastFirst, downloadCsv, fmtMD,
 } from './core.js';
+import { randomInt, targetRotation, sliceAtPointer, TAU } from './spinner-core.js';
 import { itemForm } from './views-p5.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
@@ -105,7 +106,7 @@ export async function classDetail(el, id) {
     <div class="card no-print"><div class="row">
       <div class="code-box big"><span class="code">${c.code}</span><button class="btn small" id="copy">Copy</button></div>
       <div class="muted grow-220">Students sign in, open <strong>My Classes</strong>, and type this code. <span class="chip ${c.join_open && !c.archived ? 'ok' : 'gray'}">${c.join_open && !c.archived ? 'Joining open' : 'Joining closed'}</span></div></div></div>
-    <div class="tabs no-print" role="tablist">${[['seating', 'Seating chart'], ['students', 'Students'], ['rewards', 'Rewards'], ['settings', 'Settings']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
+    <div class="tabs no-print" role="tablist">${[['seating', 'Seating chart'], ['students', 'Students'], ['spinner', 'Name spinner'], ['rewards', 'Rewards'], ['report', 'Report'], ['settings', 'Settings']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
     <div id="tab"></div>`);
   $('#copy', el).addEventListener('click', () => copyText(c.code));
   $$('.tabs button', el).forEach((b) => b.addEventListener('click', async () => {
@@ -115,7 +116,9 @@ export async function classDetail(el, id) {
   const box = $('#tab', el);
   if (tab === 'seating') await seating(box, d, reload);
   else if (tab === 'students') await studentsTab(box, d, reload);
+  else if (tab === 'spinner') spinnerTab(box, d);
   else if (tab === 'rewards') await rewardsTab(box, d, reload);
+  else if (tab === 'report') await reportTab(box, d);
   else settingsTab(box, d, reload);
 }
 
@@ -590,6 +593,270 @@ async function rewardsTab(box, d, reload) {
     try { await api(`/classes/${cid}/rewards`, { method: 'DELETE' }); toast('This class is using the default again.'); reload(); } catch (e) { fail(e); }
   });
   count();
+}
+
+// --------------------------------------------------------------------------------------
+// Name spinner: a wheel filled from the class list
+// --------------------------------------------------------------------------------------
+const WHEEL_COLORS = ['#c8102e', '#1f6fd1', '#23895a', '#b36b00', '#7a4fd1', '#b83272', '#0f7f8f', '#7a4a1e'];
+
+function drawWheel(canvas, list, rotation) {
+  const size = 560;
+  const dpr = Math.min(2, window.devicePixelRatio || 1);
+  if (canvas.width !== size * dpr) { canvas.width = size * dpr; canvas.height = size * dpr; }
+  const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  ctx.clearRect(0, 0, size, size);
+  const cx = size / 2, cy = size / 2, r = size / 2 - 10;
+  const n = list.length;
+  if (!n) {
+    ctx.fillStyle = '#3a3d44'; ctx.beginPath(); ctx.arc(cx, cy, r, 0, TAU); ctx.fill();
+    ctx.fillStyle = '#aeb2b9'; ctx.font = '700 22px system-ui, sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText('No names on the wheel', cx, cy + 8);
+    return;
+  }
+  const step = TAU / n;
+  const fontSize = n <= 10 ? 28 : n <= 18 ? 22 : n <= 28 ? 17 : n <= 40 ? 14 : 11;
+  ctx.font = `800 ${fontSize}px system-ui, "Segoe UI", sans-serif`;
+  ctx.textBaseline = 'alphabetic';
+  list.forEach((e, i) => {
+    const a0 = rotation + i * step - Math.PI / 2;
+    ctx.beginPath(); ctx.moveTo(cx, cy);
+    if (n === 1) ctx.arc(cx, cy, r, 0, TAU); else ctx.arc(cx, cy, r, a0, a0 + step);
+    ctx.closePath();
+    ctx.fillStyle = WHEEL_COLORS[i % WHEEL_COLORS.length];
+    ctx.fill();
+    ctx.lineWidth = 2; ctx.strokeStyle = 'rgba(255,255,255,.85)'; ctx.stroke();
+    ctx.save();
+    ctx.translate(cx, cy); ctx.rotate(a0 + step / 2);
+    ctx.fillStyle = '#fff'; ctx.textAlign = 'right';
+    let label = e.label;
+    const maxW = r - 62;
+    while (label.length > 3 && ctx.measureText(label).width > maxW) label = label.slice(0, -2) + '\u2026';
+    ctx.fillText(label, r - 16, fontSize * 0.34);
+    ctx.restore();
+  });
+  ctx.beginPath(); ctx.arc(cx, cy, 34, 0, TAU); ctx.fillStyle = '#1b1c1f'; ctx.fill();
+  ctx.lineWidth = 4; ctx.strokeStyle = '#fff'; ctx.stroke();
+}
+
+function spinnerTab(box, d) {
+  const members = d.members;
+  const book = state.spin || (state.spin = {});
+  const S = book[d.class.id] || (book[d.class.id] = { off: new Set(), picked: new Set(), extras: [], nextExtra: 1, remove: true, rotation: 0, result: null, history: [] });
+  S.spinning = false;
+  const entries = () => {
+    const list = members.filter((m) => !S.off.has(m.student_id))
+      .map((m) => ({ key: 's' + m.student_id, label: shortName(m), full: `${m.first_name} ${m.last_name}`, member: m }))
+      .concat(S.extras.map((x) => ({ key: 'x' + x.id, label: x.name, full: x.name, member: null })));
+    return S.remove ? list.filter((e) => !S.picked.has(e.key)) : list;
+  };
+  let drawn = entries();
+
+  mount(box, h`
+    <div class="spin-layout">
+      <div class="card spin-stage">
+        <div class="wheel-wrap"><div class="wheel-pointer" aria-hidden="true"></div><canvas class="wheel-canvas" id="wheel" role="img"></canvas></div>
+        <div class="row jc-center mt12"><button type="button" class="btn primary spin-btn" id="spinBtn">Spin the wheel</button></div>
+        <div id="spinResult" class="spin-result" role="status" aria-live="polite"></div>
+      </div>
+      <aside class="spin-side" id="spinSide"></aside>
+    </div>`);
+  const canvas = $('#wheel', box);
+
+  function paintWheel() {
+    canvas.setAttribute('aria-label', `Name wheel with ${drawn.length} name${drawn.length === 1 ? '' : 's'}`);
+    drawWheel(canvas, drawn, S.rotation);
+    $('#spinBtn', box).disabled = S.spinning || entries().length === 0;
+  }
+  function paintResult() {
+    const el = $('#spinResult', box);
+    if (!members.length && !S.extras.length) { mount(el, h`<div class="empty"><strong>No students yet</strong>Add students on the <strong>Students</strong> tab, or type some names on the right.</div>`); return; }
+    if (!drawn.length && !S.result) { mount(el, h`<p class="muted center">Nobody is on the wheel. Tick some names on the right.</p>`); return; }
+    if (S.spinning) { mount(el, h`<p class="muted center">Spinning\u2026</p>`); return; }
+    if (!S.result) { mount(el, h`<p class="muted center">${drawn.length} name${drawn.length === 1 ? '' : 's'} on the wheel. Press the button to pick one.</p>`); return; }
+    const r = S.result;
+    mount(el, h`<div class="result-card"><div class="muted small">\ud83c\udf89 The wheel picked</div><div class="result-name">${r.full}</div>
+      <div class="row jc-center">
+        ${r.member ? h`<button type="button" class="btn plus-btn" data-res="award">+ Award points</button><button type="button" class="btn danger" data-res="fine">\u2212 Fine points</button>` : ''}
+        ${S.remove && S.picked.has(r.key) ? h`<button type="button" class="btn" data-res="back">Put back on the wheel</button>` : ''}</div>
+      ${S.remove && !drawn.some((e) => e.key !== r.key) && S.picked.has(r.key) ? h`<p class="muted small center mt8">Everyone has had a turn. Press Reset wheel to start again.</p>` : ''}</div>`);
+  }
+  function paintSide() {
+    const typed = $('#spExtra', box) ? $('#spExtra', box).value : '';
+    const on = entries().length;
+    mount($('#spinSide', box), h`
+      <div class="card"><div class="row jc-between mb8"><h3 class="m0">Who is here? <span class="chip gray">${on} on the wheel</span></h3>
+        <div class="row"><button type="button" class="btn small" id="spAll">All</button><button type="button" class="btn small" id="spNone">None</button></div></div>
+        ${members.length ? h`<div class="check-grid" id="spWho">${members.map((m) => h`<label class="check"><input type="checkbox" data-sid="${m.student_id}" ${S.off.has(m.student_id) ? '' : raw('checked')}> ${m.last_name}, ${m.first_name}</label>`)}</div>
+          <div class="help">The wheel fills itself from this class. Untick anyone who is absent.</div>` : h`<p class="muted small">No students in this class yet.</p>`}</div>
+      <div class="card"><h3>Add other names</h3>
+        <label for="spExtra" class="hidden">Other names, one per line</label><textarea id="spExtra" rows="3" placeholder="One name per line (for groups, helpers, or guests)"></textarea>
+        <div class="row mt8"><button type="button" class="btn small" id="spAdd">Add to wheel</button></div>
+        ${S.extras.length ? h`<div class="chips mt8">${S.extras.map((x) => h`<span class="chip removable">${x.name}<button type="button" data-rmx="${x.id}" aria-label="Remove ${x.name}">\u00d7</button></span>`)}</div>` : ''}</div>
+      <div class="card"><label class="check"><input type="checkbox" id="spRemove" ${S.remove ? raw('checked') : ''}> Take each winner off the wheel so everyone gets a turn</label>
+        <div class="row mt12"><button type="button" class="btn" id="spReset">Reset wheel</button></div>
+        ${S.history.length ? h`<h3 class="mt14">Picked so far (${S.history.length})</h3><ol class="pick-list">${S.history.map((n) => h`<li>${n}</li>`)}</ol>` : ''}</div>`);
+    if (typed) $('#spExtra', box).value = typed;
+  }
+  function refresh(redrawWheel = true) {
+    if (redrawWheel && !S.spinning) drawn = entries();
+    paintWheel(); paintResult(); paintSide();
+  }
+
+  function spin() {
+    if (S.spinning) return;
+    drawn = entries();
+    if (!drawn.length) { refresh(); return; }
+    S.spinning = true;
+    S.result = null;
+    const n = drawn.length;
+    const from = Math.random() * TAU;                      // cosmetic start position
+    const to = targetRotation(randomInt(n), n, from);      // the pick itself uses secure random numbers
+    const reduced = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    const dur = reduced ? 0 : 4200 + Math.random() * 900;
+    const t0 = performance.now();
+    paintResult(); $('#spinBtn', box).disabled = true;
+    const frame = (t) => {
+      const k = dur ? Math.min(1, (t - t0) / dur) : 1;
+      S.rotation = from + (to - from) * (1 - Math.pow(1 - k, 3));
+      drawWheel(canvas, drawn, S.rotation);
+      if (k < 1) { requestAnimationFrame(frame); return; }
+      S.spinning = false;
+      const win = drawn[sliceAtPointer(S.rotation, n)];     // read the winner off the wheel the teacher is looking at
+      S.result = win; S.history.push(win.full);
+      if (S.remove) S.picked.add(win.key);
+      paintWheel(); paintResult(); paintSide();
+    };
+    requestAnimationFrame(frame);
+  }
+
+  box.addEventListener('click', async (e) => {
+    const b = e.target.closest('button');
+    if (!b || !box.contains(b)) return;
+    if (b.id === 'spinBtn') return spin();
+    if (S.spinning) return;
+    if (b.id === 'spAll') { S.off.clear(); return refresh(); }
+    if (b.id === 'spNone') { members.forEach((m) => S.off.add(m.student_id)); return refresh(); }
+    if (b.id === 'spAdd') {
+      const names = $('#spExtra', box).value.split('\n').map((x) => x.trim().slice(0, 30)).filter(Boolean);
+      if (!names.length) { toast('Type at least one name first.', 'err'); return; }
+      names.slice(0, 60).forEach((name) => S.extras.push({ id: S.nextExtra++, name }));
+      return refresh();
+    }
+    if (b.dataset.rmx) { S.extras = S.extras.filter((x) => String(x.id) !== b.dataset.rmx); S.picked.delete('x' + b.dataset.rmx); return refresh(); }
+    if (b.id === 'spReset') { S.picked.clear(); S.result = null; S.history = []; return refresh(); }
+    if (b.dataset.res === 'back' && S.result) { S.picked.delete(S.result.key); S.history = S.history.slice(0, -1); S.result = null; return refresh(); }
+    if ((b.dataset.res === 'award' || b.dataset.res === 'fine') && S.result && S.result.member) deskReward(S.result.member, b.dataset.res, () => {});
+  });
+  box.addEventListener('change', (e) => {
+    if (S.spinning) return;
+    if (e.target.dataset && e.target.dataset.sid) {
+      const id = Number(e.target.dataset.sid);
+      if (e.target.checked) S.off.delete(id); else S.off.add(id);
+      refresh();
+    } else if (e.target.id === 'spRemove') { S.remove = e.target.checked; if (!S.remove) S.picked.clear(); refresh(); }
+  });
+  refresh();
+}
+
+// --------------------------------------------------------------------------------------
+// Report tab: one class, one school year (or any dates)
+// --------------------------------------------------------------------------------------
+const TYPE_LABEL = { award: 'Award', fine: 'Fine', purchase: 'Store purchase', refund: 'Store refund', seat: 'Rewards Day seat', seat_refund: 'Seat refund', adjustment: 'Reversal' };
+const slug = (t) => String(t).toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '') || 'class';
+
+async function reportTab(box, d) {
+  const cid = d.class.id;
+  const me = state.me;
+  const saved = state.reportView || (state.reportView = {});
+  const v = saved[cid] || (saved[cid] = { year: state.year || me.school_year, from: '', to: '' });
+  const years = [...new Set([v.year, ...me.years])].sort().reverse();
+  mount(box, h`
+    <div class="card no-print"><h2>Class report</h2>
+      <p class="muted">Steps, P5 points, store orders, and Rewards Day for everyone in this class.</p>
+      <div class="form-grid">
+        <div><label for="rp_y">School year</label><select id="rp_y">${years.map((y) => h`<option value="${y}" ${y === v.year ? raw('selected') : ''}>${y}</option>`)}</select></div>
+        <div><label for="rp_f">From (optional)</label><input type="date" id="rp_f" value="${v.from}"></div>
+        <div><label for="rp_t">To (optional)</label><input type="date" id="rp_t" value="${v.to}"></div>
+      </div>
+      <div class="help mb12">Leave the dates empty to cover the whole school year (August 1 to July 31). Dates limit steps, points, and orders.</div>
+      <div class="row"><button type="button" class="btn primary" id="rpRun">Show report</button></div></div>
+    <div id="rpOut"></div>`);
+  const out = $('#rpOut', box);
+  let data = null;
+
+  async function run() {
+    v.year = $('#rp_y', box).value; v.from = $('#rp_f', box).value; v.to = $('#rp_t', box).value;
+    mount(out, h`<div class="spinner">Building the report\u2026</div>`);
+    try {
+      const qs = `year=${encodeURIComponent(v.year)}${v.from ? '&from=' + v.from : ''}${v.to ? '&to=' + v.to : ''}`;
+      data = await api(`/classes/${cid}/report?${qs}`);
+    } catch (e) { mount(out, h``); fail(e); return; }
+    paint();
+  }
+
+  function paint() {
+    const r = data, t = r.totals, c = r.class;
+    const nm = (x) => `${x.last_name}, ${x.first_name}`;
+    const range = `${fmtDate(r.from)} \u2013 ${fmtDate(r.to)}`;
+    const cut = Object.entries(r.truncated).filter(([, v2]) => v2).map(([k]) => ({ steps: 'step history', p5: 'P5 history', orders: 'store orders' }[k]));
+    mount(out, h`
+      <div class="report-print">
+        <div class="print-only report-head"><h1>${state.me.settings.school_name}: class report</h1>
+          <p>${c.name}${c.period ? ' \u2022 Period ' + c.period : ''} \u2022 Teacher: ${c.owner_name} \u2022 ${range} \u2022 Printed ${fmtDate(new Date().toISOString().slice(0, 10))}</p></div>
+        <div class="card"><div class="row jc-between mb8"><div><h2 class="m0">${c.name}${c.period ? ' (Period ' + c.period + ')' : ''}</h2><p class="muted m0">${range} \u2022 ${r.students.length} student${r.students.length === 1 ? '' : 's'}</p></div>
+          <div class="row no-print"><button type="button" class="btn primary" id="rpPrint">Print or save as PDF</button></div></div>
+          <div class="no-print row mb8"><span class="muted small">Download as a spreadsheet:</span>
+            <button type="button" class="btn small" data-csv="summary">Student summary</button><button type="button" class="btn small" data-csv="steps">Step history</button>
+            <button type="button" class="btn small" data-csv="p5">P5 points</button><button type="button" class="btn small" data-csv="orders">Store orders</button></div>
+          ${cut.length ? h`<div class="banner warn">This is a very large report, so the ${cut.join(', ')} list${cut.length === 1 ? ' shows' : 's show'} only the first 20,000 rows. Try a shorter date range.</div>` : ''}
+          <div class="kpi-grid report-kpis">
+            <div class="kpi"><div class="label">Steps</div><div class="big">${t.steps_total}</div><div class="sub">1: ${t.s1} \u2022 2: ${t.s2} \u2022 3: ${t.s3} \u2022 4: ${t.s4} \u2022 5: ${t.s5}</div></div>
+            <div class="kpi"><div class="label">P5 awarded</div><div class="big">${t.awarded}</div><div class="sub">${t.fined} fined</div></div>
+            <div class="kpi"><div class="label">P5 spent</div><div class="big">${t.spent}</div><div class="sub">${t.orders} store order${t.orders === 1 ? '' : 's'}</div></div>
+            <div class="kpi"><div class="label">P5 balances</div><div class="big">${t.balance}</div><div class="sub">held by the class now</div></div></div></div>
+        <div class="card"><h2>Student summary</h2>
+          ${r.students.length ? h`<div class="table-wrap"><table class="report-table"><thead><tr><th>Student</th><th>Gr</th><th class="num">S1</th><th class="num">S2</th><th class="num">S3</th><th class="num">S4</th><th class="num">S5</th><th class="num">Steps</th><th class="num">Awarded</th><th class="num">Fined</th><th class="num">Spent</th><th class="num">Balance</th><th class="num">Orders</th><th>Rewards Day</th></tr></thead><tbody>
+            ${r.students.map((s) => h`<tr><td>${nm(s)}</td><td>${s.grade}</td>${['s1', 's2'].map((k) => h`<td class="num">${s[k]}</td>`)}${['s3', 's4', 's5'].map((k) => (s[k] ? h`<td class="num hot">${s[k]}</td>` : h`<td class="num">0</td>`))}
+              <td class="num"><strong>${s.steps_total}</strong></td><td class="num">${s.awarded}</td><td class="num">${s.fined}</td><td class="num">${s.spent}</td><td class="num">${s.balance}</td><td class="num">${s.orders}</td><td class="small">${s.rewards_day || '\u2014'}</td></tr>`)}
+            <tr class="totals"><td>Class total</td><td></td>${['s1', 's2', 's3', 's4', 's5', 'steps_total', 'awarded', 'fined', 'spent', 'balance', 'orders'].map((k) => h`<td class="num">${t[k]}</td>`)}<td></td></tr></tbody></table></div>
+            <div class="help">S1 to S5 are the number of Step 1 to Step 5 entries. Balance is each student\u2019s current P5 balance. Awarded and fined are net of any entries you reversed.</div>`
+            : h`<div class="empty"><strong>No students in this class yet</strong>Add students on the Students tab.</div>`}</div>
+        <details class="card"><summary class="summary-bold">Step history (${r.steps.length})</summary>
+          ${r.steps.length ? h`<div class="table-wrap mt8"><table><thead><tr><th>Date</th><th>Student</th><th>Step</th><th>Teacher</th><th>Per</th><th>Notes</th></tr></thead><tbody>
+            ${r.steps.map((x) => h`<tr><td class="nowrap">${fmtMD(x.step_date)}</td><td>${nm(x)}</td><td>Step ${x.step_level}</td><td>${x.teacher || ''}</td><td>${x.period || ''}</td><td>${x.notes || ''}</td></tr>`)}</tbody></table></div>` : h`<p class="muted mt8">No steps in this period.</p>`}</details>
+        <details class="card"><summary class="summary-bold">P5 points history (${r.p5.length})</summary>
+          ${r.p5.length ? h`<div class="table-wrap mt8"><table><thead><tr><th>Date</th><th>Student</th><th>What</th><th>For</th><th class="num">Points</th><th>Note</th><th>Teacher</th></tr></thead><tbody>
+            ${r.p5.map((x) => h`<tr><td class="nowrap">${fmtMD(x.tx_date)}</td><td>${nm(x)}</td><td>${TYPE_LABEL[x.type] || x.type}</td><td>${x.category || ''}</td><td class="num ${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${x.amount}</td><td>${x.note || ''}</td><td>${x.teacher || ''}</td></tr>`)}</tbody></table></div>` : h`<p class="muted mt8">No P5 activity in this period.</p>`}</details>
+        <details class="card"><summary class="summary-bold">Store orders (${r.orders.length})</summary>
+          ${r.orders.length ? h`<div class="table-wrap mt8"><table><thead><tr><th>Date</th><th>Student</th><th>Reward</th><th class="num">Paid</th><th>Status</th></tr></thead><tbody>
+            ${r.orders.map((x) => h`<tr><td class="nowrap">${fmtMD(x.day)}</td><td>${nm(x)}</td><td>${x.item}</td><td class="num">${x.price_paid}</td><td>${x.status}</td></tr>`)}</tbody></table></div>` : h`<p class="muted mt8">No store orders in this period.</p>`}</details>
+      </div>`);
+  }
+
+  const rows = {
+    summary: () => [['Student ID', 'Last name', 'First name', 'Grade', 'Homeroom teacher', 'Step 1', 'Step 2', 'Step 3', 'Step 4', 'Step 5', 'Total steps', 'P5 awarded', 'P5 fined', 'P5 spent', 'P5 balance', 'Store orders', 'Rewards Day'],
+      data.students.map((s) => [s.student_id, s.last_name, s.first_name, s.grade, s.homeroom_teacher, s.s1, s.s2, s.s3, s.s4, s.s5, s.steps_total, s.awarded, s.fined, s.spent, s.balance, s.orders, s.rewards_day])],
+    steps: () => [['Date', 'Student ID', 'Last name', 'First name', 'Grade', 'Step', 'Teacher', 'Period', 'Notes'],
+      data.steps.map((x) => [x.step_date, x.student_id, x.last_name, x.first_name, x.grade, x.step_level, x.teacher, x.period, x.notes])],
+    p5: () => [['Date', 'Student ID', 'Last name', 'First name', 'Grade', 'What', 'For', 'Points', 'Note', 'Teacher'],
+      data.p5.map((x) => [x.tx_date, x.student_id, x.last_name, x.first_name, x.grade, TYPE_LABEL[x.type] || x.type, x.category, x.amount, x.note, x.teacher])],
+    orders: () => [['Date', 'Student ID', 'Last name', 'First name', 'Grade', 'Reward', 'Points paid', 'Status'],
+      data.orders.map((x) => [x.day, x.student_id, x.last_name, x.first_name, x.grade, x.item, x.price_paid, x.status])],
+  };
+  box.addEventListener('click', (e) => {
+    const b = e.target.closest('button');
+    if (!b) return;
+    if (b.id === 'rpRun') return run();
+    if (!data) return;
+    if (b.id === 'rpPrint') { $$('details', box).forEach((x) => { x.open = true; }); window.print(); return; }
+    if (b.dataset.csv) {
+      const [head, body] = rows[b.dataset.csv]();
+      downloadCsv(`${slug(data.class.name)}${data.class.period ? '-p' + slug(data.class.period) : ''}-${data.year}-${b.dataset.csv}.csv`, head, body);
+    }
+  });
+  run();
 }
 
 // --------------------------------------------------------------------------------------

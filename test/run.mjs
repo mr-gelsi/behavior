@@ -4,6 +4,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { D1Shim } from './d1shim.mjs';
 import worker from '../src/worker.js';
 import { runScheduled } from '../src/lib/rewards.js';
+import { randomInt, sliceAtPointer, targetRotation, TAU } from '../public/js/spinner-core.js';
 
 const db = new D1Shim();
 for (const f of readdirSync(new URL('../migrations/', import.meta.url)).sort()) {
@@ -745,6 +746,137 @@ ok((await call(s3003, 'GET', '/api/student/classes')).data.classes.length === 0,
 await call(teacher, 'PATCH', `/api/classes/${cls3.id}`, { archived: false });
 r = await call(s3003, 'DELETE', `/api/student/classes/${cls3.id}`);
 ok(r.data.ok && (await call(s3003, 'GET', '/api/student/classes')).data.classes.length === 0, 'a student can leave a class they joined');
+
+
+// ------------------------------------------------------------------------------------
+section('Name spinner math');
+let seed = 12345;
+const lcg = () => (seed = (seed * 1664525 + 1013904223) % 4294967296) / 4294967296;
+const tally = Array(7).fill(0);
+for (let i = 0; i < 14000; i++) tally[randomInt(7, lcg)]++;
+ok(tally.every((c) => c > 1700 && c < 2300), 'every name is about equally likely to be picked', tally);
+const secure = Array.from({ length: 3000 }, () => randomInt(5));
+ok(secure.every((v) => Number.isInteger(v) && v >= 0 && v < 5) && new Set(secure).size === 5, 'secure random picks stay in range and reach every name');
+ok(randomInt(1) === 0, 'a wheel of one name always picks it');
+let threw = false; try { randomInt(0); } catch { threw = true; }
+ok(threw, 'an empty wheel is refused');
+let landBad = 0, spinBad = 0;
+for (let t = 0; t < 4000; t++) {
+  const n = 1 + Math.floor(lcg() * 60), idx = randomInt(n, lcg), r0 = lcg() * 200;
+  const rf = targetRotation(idx, n, r0, lcg);
+  if (sliceAtPointer(rf, n) !== idx) landBad++;
+  if (rf < r0 + 5 * TAU) spinBad++;
+}
+ok(landBad === 0, 'the wheel always stops on the chosen name (4,000 random wheels of 1 to 60 names)', landBad);
+ok(spinBad === 0, 'the wheel always makes several full turns first');
+
+// ------------------------------------------------------------------------------------
+section('Reordering the menu');
+r = await call(teacher, 'GET', '/api/me');
+ok(r.data.prefs && r.data.prefs.nav_order === null, 'by default nobody has a saved menu order');
+r = await call(teacher, 'PUT', '/api/me/nav-order', { order: ['classes', 'dashboard', 'admin', 'bogus', 'dashboard', 'p5'] });
+ok(r.data.ok && JSON.stringify(r.data.order) === JSON.stringify(['classes', 'dashboard', 'p5']), 'a saved order drops unknown items, admin-only items for teachers, and repeats', r.data);
+r = await call(teacher, 'GET', '/api/me');
+ok(JSON.stringify(r.data.prefs.nav_order) === JSON.stringify(['classes', 'dashboard', 'p5']), 'the order comes back with the signed-in person');
+r = await call(teacher2, 'GET', '/api/me');
+ok(r.data.prefs.nav_order === null, "another teacher's menu is not affected");
+r = await call(admin, 'PUT', '/api/me/nav-order', { order: ['admin', 'dashboard'] });
+ok(JSON.stringify(r.data.order) === JSON.stringify(['admin', 'dashboard']), 'an admin can order the Admin tab too');
+r = await call(s2001, 'PUT', '/api/me/nav-order', { order: ['seat', 'dashboard', 'me'] });
+ok(JSON.stringify(r.data.order) === JSON.stringify(['seat', 'me']), 'students can reorder their own menu, but only with student tabs');
+ok(JSON.stringify((await call(s2001, 'GET', '/api/me')).data.prefs.nav_order) === JSON.stringify(['seat', 'me']), "and it's saved for them");
+ok((await call(s2002, 'GET', '/api/me')).data.prefs.nav_order === null, "another student's menu is not affected");
+for (const [label, body] of [['not a list', { order: 'x' }], ['a non-text item', { order: [1] }], ['too many items', { order: Array.from({ length: 31 }, (_, i) => 'p' + i) }]]) {
+  r = await call(teacher, 'PUT', '/api/me/nav-order', body);
+  ok(r.status === 400, 'menu order refused: ' + label);
+}
+r = await call(null, 'PUT', '/api/me/nav-order', { order: ['dashboard'] });
+ok(r.status === 401, 'signing in is required to save a menu order');
+r = await call(teacher, 'DELETE', '/api/me/nav-order');
+ok(r.data.ok && (await call(teacher, 'GET', '/api/me')).data.prefs.nav_order === null, 'resetting goes back to the default order');
+
+// ------------------------------------------------------------------------------------
+section('Class report');
+const repId = (await call(teacher, 'POST', '/api/classes', { name: 'Report class', period: '4' })).data.id;
+await call(teacher, 'POST', `/api/classes/${repId}/members`, { student_ids: [1002, 2001, 2002, 3001, 3003] });
+const WIDE = 'from=2000-01-01&to=2099-12-31';
+const stepCounts = (id, lo, hi) => {
+  const rows = db.db.prepare('SELECT step_level l, COUNT(*) c FROM steps WHERE student_id=? AND step_date BETWEEN ? AND ? GROUP BY step_level').all(id, lo, hi);
+  const o = { s1: 0, s2: 0, s3: 0, s4: 0, s5: 0 }; rows.forEach((x) => { o['s' + x.l] = x.c; }); return o;
+};
+const p5Expect = (id, lo, hi) => {
+  const rows = db.db.prepare('SELECT p.type, p.amount, o.type AS otype FROM p5_transactions p LEFT JOIN p5_transactions o ON o.id = p.related_id WHERE p.student_id=? AND p.tx_date BETWEEN ? AND ?').all(id, lo, hi);
+  let awarded = 0, fined = 0, spent = 0;
+  for (const x of rows) {
+    const eff = x.type === 'adjustment' ? x.otype : x.type;
+    if (eff === 'award') awarded += x.amount;
+    if (eff === 'fine') fined -= x.amount;
+    if (['purchase', 'seat', 'refund', 'seat_refund'].includes(x.type)) spent -= x.amount;
+  }
+  return { awarded, fined, spent };
+};
+r = await call(teacher, 'GET', `/api/classes/${repId}/report?${WIDE}`);
+const rep1 = r.data;
+ok(r.status === 200 && rep1.students.length === 5 && rep1.class.name === 'Report class', 'the report lists every student in the class');
+ok(rep1.students.map((s) => s.last_name).join() === [...rep1.students.map((s) => s.last_name)].sort((a, b) => a.localeCompare(b)).join(), 'students are listed alphabetically by last name');
+let stepsOk = true, p5Ok = true, balOk = true;
+for (const s of rep1.students) {
+  const e = stepCounts(s.student_id, '2000-01-01', '2099-12-31');
+  if (['s1', 's2', 's3', 's4', 's5'].some((k) => s[k] !== e[k]) || s.steps_total !== Object.values(e).reduce((a, b) => a + b, 0)) stepsOk = false;
+  const pe = p5Expect(s.student_id, '2000-01-01', '2099-12-31');
+  if (s.awarded !== pe.awarded || s.fined !== pe.fined || s.spent !== pe.spent) p5Ok = false;
+  if (s.balance !== balOf(s.student_id)) balOk = false;
+}
+ok(stepsOk, 'step counts by level match the records');
+ok(p5Ok, 'P5 awarded, fined, and spent match the ledger');
+ok(balOk, 'current balances match');
+ok(rep1.totals.steps_total === rep1.students.reduce((n, s) => n + s.steps_total, 0) && rep1.totals.balance === rep1.students.reduce((n, s) => n + s.balance, 0), 'class totals add up');
+ok(rep1.steps.length === rep1.totals.steps_total && rep1.steps.every((x) => x.last_name && x.step_date), 'the step history has one named row per step');
+ok(rep1.steps.every((x, i, a) => i === 0 || a[i - 1].step_date <= x.step_date), 'the step history is in date order');
+ok(rep1.p5.length === db.db.prepare(`SELECT COUNT(*) c FROM p5_transactions WHERE student_id IN (1002,2001,2002,3001,3003)`).get().c, 'the P5 history includes every entry');
+const orderCountDb = db.db.prepare("SELECT COUNT(*) c FROM store_orders o JOIN store_items i ON i.id=o.item_id WHERE o.student_id IN (1002,2001,2002,3001,3003) AND (i.owner_id IS NULL OR i.owner_id=?)").get(t1id).c;
+ok(rep1.orders.length === orderCountDb && rep1.orders.some((o) => o.item === 'Extra recess token'), 'store orders include school rewards and this teacher\u2019s custom rewards');
+const before3003 = rep1.students.find((s) => s.student_id === 3003);
+const aw = await call(teacher, 'POST', '/api/p5', { mode: 'award', student_ids: [3003], category_id: 1, amount: 7 });
+let after = (await call(teacher, 'GET', `/api/classes/${repId}/report?${WIDE}`)).data.students.find((s) => s.student_id === 3003);
+ok(after.awarded === before3003.awarded + 7 && after.balance === before3003.balance + 7, 'a new award shows up');
+const lastAward = db.db.prepare("SELECT id FROM p5_transactions WHERE student_id=3003 AND type='award' ORDER BY id DESC").get().id;
+await call(teacher, 'POST', `/api/p5/${lastAward}/reverse`, {});
+after = (await call(teacher, 'GET', `/api/classes/${repId}/report?${WIDE}`)).data.students.find((s) => s.student_id === 3003);
+ok(after.awarded === before3003.awarded && after.balance === before3003.balance, 'a reversed award is netted out, not counted twice');
+r = await call(teacher, 'GET', `/api/classes/${repId}/report?from=2026-10-10&to=2026-10-20`);
+let rangeOk = true;
+for (const s of r.data.students) { const e = stepCounts(s.student_id, '2026-10-10', '2026-10-20'); if (['s1', 's2', 's3', 's4', 's5'].some((k) => s[k] !== e[k])) rangeOk = false; }
+ok(rangeOk && r.data.steps.every((x) => x.step_date >= '2026-10-10' && x.step_date <= '2026-10-20'), 'a date range limits the steps to those dates');
+r = await call(teacher, 'GET', `/api/classes/${repId}/report?year=2026-27`);
+ok(r.data.from === '2026-08-01' && r.data.to === '2027-07-31' && r.data.year === '2026-27', 'a school year means August 1 to July 31');
+r = await call(teacher, 'GET', `/api/classes/${repId}/report?year=2025-26`);
+ok(r.data.steps.every((x) => x.step_date >= '2025-08-01' && x.step_date <= '2026-07-31'), 'other school years work too');
+let seatOk = true;
+for (const s of rep1.students) {
+  const row = db.db.prepare("SELECT a.name an, d.name dn FROM reward_bookings b JOIN reward_activities a ON a.id=b.activity_id JOIN reward_days d ON d.id=b.reward_day_id WHERE b.student_id=? AND b.status='confirmed' ORDER BY d.reward_date DESC, b.id DESC").get(s.student_id);
+  const exp = row ? `${row.an} (${row.dn})` : null;
+  if ((s.rewards_day || null) !== exp && !(row && s.rewards_day && s.rewards_day.includes(row.an))) seatOk = false;
+}
+ok(seatOk, 'each student\u2019s Rewards Day activity is listed');
+ok(!JSON.stringify(rep1).match(/pin_hash|pw_hash|hmac\$|pbkdf2/), 'the report never contains PIN or password data');
+r = await call(teacher2, 'GET', `/api/classes/${repId}/report`);
+ok(r.status === 404, "another teacher can't open this class's report");
+r = await call(admin, 'GET', `/api/classes/${repId}/report?${WIDE}`);
+ok(r.status === 200 && r.data.students.length === 5, 'an admin can open any class report');
+r = await call(s2001, 'GET', `/api/classes/${repId}/report`);
+ok(r.status === 403, 'students cannot open reports');
+r = await call(null, 'GET', `/api/classes/${repId}/report`);
+ok(r.status === 401, 'signing in is required');
+for (const [label, q] of [['a bad school year', 'year=abc'], ['a bad date', 'from=2026-13-40'], ['an end date before the start', 'from=2026-10-20&to=2026-10-10']]) {
+  r = await call(teacher, 'GET', `/api/classes/${repId}/report?${q}`);
+  ok(r.status === 400, 'report refused: ' + label);
+}
+const theoClass = (await call(teacher2, 'POST', '/api/classes', { name: 'Theo class' })).data.id;
+await call(teacher2, 'POST', `/api/classes/${theoClass}/members`, { student_ids: [2001] });
+r = await call(teacher2, 'GET', `/api/classes/${theoClass}/report?${WIDE}`);
+ok(!r.data.orders.some((o) => o.item === 'Extra recess token'), "one teacher's report never shows orders for another teacher's custom reward");
+ok(db.db.prepare("SELECT COUNT(*) c FROM audit_log WHERE action='class.report'").get().c >= 5, 'opening a report is recorded in the audit log');
 
 // ------------------------------------------------------------------------------------
 section('Export and audit');

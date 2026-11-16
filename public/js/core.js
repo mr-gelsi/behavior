@@ -161,7 +161,8 @@ export function csvEscape(v) {
 }
 export function downloadCsv(filename, header, rows) {
   const text = [header, ...rows].map((r) => r.map(csvEscape).join(',')).join('\n') + '\n';
-  const url = URL.createObjectURL(new Blob([text], { type: 'text/csv;charset=utf-8' }));
+  // The byte-order mark makes Excel read names with accents (José, Zoë) correctly.
+  const url = URL.createObjectURL(new Blob(['\uFEFF' + text], { type: 'text/csv;charset=utf-8' }));
   const a = document.createElement('a');
   a.href = url; a.download = filename;
   document.body.appendChild(a); a.click(); a.remove();

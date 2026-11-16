@@ -253,6 +253,101 @@ add('DELETE', '/api/classes/:id/rewards', 'staff', async (c) => {
   return { ok: true };
 });
 
+// ---- Staff: full report for one class ---------------------------------------------------------
+// Everything a teacher needs for a conference or an end-of-term review, for one school year
+// (or a date range). Returned as data; the page turns it into the on-screen report, a printout,
+// and CSV downloads.
+
+add('GET', '/api/classes/:id/report', 'staff', async (c) => {
+  const { env } = c;
+  const cls = await ownClass(c, c.params.id);
+  const year = c.url.searchParams.get('year') || schoolYearOf(todayStr(env));
+  if (!/^\d{4}-\d{2}$/.test(year)) throw bad('School year must look like 2026-27.');
+  const y = Number(year.slice(0, 4));
+  const from = c.url.searchParams.get('from') ? V.date(c.url.searchParams.get('from'), 'From') : `${y}-08-01`;
+  const to = c.url.searchParams.get('to') ? V.date(c.url.searchParams.get('to'), 'To') : `${y + 1}-07-31`;
+  if (to < from) throw bad('The end date must be on or after the start date.');
+  const LIMIT = 20000;
+
+  const inClass = `SELECT m.student_id FROM class_members m JOIN students s ON s.student_id = m.student_id WHERE m.class_id = ? AND s.active = 1`;
+  const roster = await all(env,
+    `SELECT s.student_id, s.last_name, s.first_name, s.grade, s.homeroom_teacher,
+            (SELECT COALESCE(SUM(amount), 0) FROM p5_transactions p WHERE p.student_id = s.student_id) AS balance
+       FROM class_members m JOIN students s ON s.student_id = m.student_id
+      WHERE m.class_id = ? AND s.active = 1 ORDER BY s.last_name, s.first_name`, cls.id);
+
+  const stepAgg = new Map((await all(env,
+    `SELECT t.student_id, COUNT(*) AS total,
+            SUM(CASE WHEN t.step_level = 1 THEN 1 ELSE 0 END) AS s1, SUM(CASE WHEN t.step_level = 2 THEN 1 ELSE 0 END) AS s2,
+            SUM(CASE WHEN t.step_level = 3 THEN 1 ELSE 0 END) AS s3, SUM(CASE WHEN t.step_level = 4 THEN 1 ELSE 0 END) AS s4,
+            SUM(CASE WHEN t.step_level = 5 THEN 1 ELSE 0 END) AS s5
+       FROM steps t WHERE t.student_id IN (${inClass}) AND t.step_date BETWEEN ? AND ? GROUP BY t.student_id`, cls.id, from, to))
+    .map((r) => [r.student_id, r]));
+
+  // A reversal (type "adjustment") counts against the kind of entry it reversed.
+  const p5Agg = new Map((await all(env,
+    `SELECT p.student_id,
+            SUM(CASE WHEN COALESCE(o.type, p.type) = 'award' THEN p.amount ELSE 0 END) AS awarded,
+            -SUM(CASE WHEN COALESCE(o.type, p.type) = 'fine' THEN p.amount ELSE 0 END) AS fined,
+            -SUM(CASE WHEN p.type IN ('purchase', 'seat', 'refund', 'seat_refund') THEN p.amount ELSE 0 END) AS spent
+       FROM p5_transactions p LEFT JOIN p5_transactions o ON p.type = 'adjustment' AND o.id = p.related_id
+      WHERE p.student_id IN (${inClass}) AND p.tx_date BETWEEN ? AND ? GROUP BY p.student_id`, cls.id, from, to))
+    .map((r) => [r.student_id, r]));
+
+  // Only rewards the class owner can offer (school rewards and their own), never another teacher's.
+  const orderAgg = new Map((await all(env,
+    `SELECT o.student_id, SUM(CASE WHEN o.status <> 'cancelled' THEN 1 ELSE 0 END) AS n
+       FROM store_orders o JOIN store_items i ON i.id = o.item_id
+      WHERE o.student_id IN (${inClass}) AND substr(o.created_at, 1, 10) BETWEEN ? AND ?
+        AND (i.owner_id IS NULL OR i.owner_id = ?) GROUP BY o.student_id`, cls.id, from, to, cls.owner_id))
+    .map((r) => [r.student_id, r.n]));
+
+  const seat = new Map();
+  for (const r of await all(env,
+    `SELECT b.student_id, a.name AS activity, d.name AS day_name, d.reward_date
+       FROM reward_bookings b JOIN reward_activities a ON a.id = b.activity_id JOIN reward_days d ON d.id = b.reward_day_id
+      WHERE b.status = 'confirmed' AND b.student_id IN (${inClass}) AND d.reward_date BETWEEN ? AND ?
+      ORDER BY d.reward_date, b.id`, cls.id, from, to)) seat.set(r.student_id, `${r.activity} (${r.day_name})`);
+
+  const students = roster.map((s) => {
+    const st = stepAgg.get(s.student_id) || {};
+    const p = p5Agg.get(s.student_id) || {};
+    return {
+      student_id: s.student_id, last_name: s.last_name, first_name: s.first_name, grade: s.grade, homeroom_teacher: s.homeroom_teacher,
+      s1: st.s1 || 0, s2: st.s2 || 0, s3: st.s3 || 0, s4: st.s4 || 0, s5: st.s5 || 0, steps_total: st.total || 0,
+      awarded: p.awarded || 0, fined: p.fined || 0, spent: p.spent || 0, balance: s.balance,
+      orders: orderAgg.get(s.student_id) || 0, rewards_day: seat.get(s.student_id) || null,
+    };
+  });
+  const sum = (k) => students.reduce((n, s) => n + s[k], 0);
+  const totals = Object.fromEntries(['s1', 's2', 's3', 's4', 's5', 'steps_total', 'awarded', 'fined', 'spent', 'balance', 'orders'].map((k) => [k, sum(k)]));
+
+  const names = new Map(roster.map((s) => [s.student_id, s]));
+  const named = (r) => { const s = names.get(r.student_id); return { ...r, last_name: s.last_name, first_name: s.first_name, grade: s.grade }; };
+  const steps = (await all(env,
+    `SELECT t.student_id, t.step_level, t.step_date, t.teacher, t.period, t.notes, t.source FROM steps t
+      WHERE t.student_id IN (${inClass}) AND t.step_date BETWEEN ? AND ? ORDER BY t.step_date, t.id LIMIT ${LIMIT + 1}`, cls.id, from, to)).map(named);
+  const p5 = (await all(env,
+    `SELECT p.student_id, p.type, p.amount, p.note, p.teacher, p.tx_date, c.name AS category
+       FROM p5_transactions p LEFT JOIN p5_categories c ON c.id = p.category_id
+      WHERE p.student_id IN (${inClass}) AND p.tx_date BETWEEN ? AND ? ORDER BY p.tx_date, p.id LIMIT ${LIMIT + 1}`, cls.id, from, to)).map(named);
+  const orders = (await all(env,
+    `SELECT o.student_id, o.status, o.price_paid, substr(o.created_at, 1, 10) AS day, i.name AS item
+       FROM store_orders o JOIN store_items i ON i.id = o.item_id
+      WHERE o.student_id IN (${inClass}) AND substr(o.created_at, 1, 10) BETWEEN ? AND ?
+        AND (i.owner_id IS NULL OR i.owner_id = ?) ORDER BY o.id LIMIT ${LIMIT + 1}`, cls.id, from, to, cls.owner_id)).map(named);
+
+  const owner = await one(env, 'SELECT name FROM users WHERE id = ?', cls.owner_id);
+  await audit(env, c.actor, 'class.report', `id=${cls.id} year=${year} students=${students.length}`);
+  const cut = (arr) => (arr.length > LIMIT ? (arr.length = LIMIT, true) : false);
+  return {
+    class: publicClass(cls, owner && owner.name), year, from, to, generated_at: new Date().toISOString(),
+    students, totals,
+    truncated: { steps: cut(steps), p5: cut(p5), orders: cut(orders) },
+    steps, p5, orders,
+  };
+});
+
 // ---- Students: join with a code -------------------------------------------------------------
 
 add('POST', '/api/student/classes/join', 'student', async (c) => {

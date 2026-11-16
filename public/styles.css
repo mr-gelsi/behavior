@@ -414,3 +414,64 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
 .login-logo { width: 190px; margin: 0 auto 14px; }
 .login-title { text-align: center; }
 @media print { .logo-tile { border: 1px solid #999; } }
+
+/* ---------- Reorder the menu ---------- */
+.nav-tools { padding: 10px 6px 0; }
+.link-btn { background: none; border: 0; color: #9a9ea6; font: inherit; font-size: 13px; cursor: pointer; padding: 6px 8px; border-radius: 8px; }
+.link-btn:hover { color: var(--text); background: #2a2c31; }
+.nav-help { font-size: 12.5px; color: var(--muted); margin: 0 0 8px; }
+.nav-row { display: flex; align-items: center; gap: 8px; padding: 6px 6px 6px 4px; border-radius: 12px; background: #25272b; position: relative; }
+.nav-row.dragging { z-index: 6; background: #3a3d44; box-shadow: 0 8px 20px rgba(0,0,0,.5); }
+.nav-row.drop-before { box-shadow: 0 -3px 0 #8ab4ff; }
+.nav-row.drop-after { box-shadow: 0 3px 0 #8ab4ff; }
+.nav-handle { cursor: grab; touch-action: none; color: #9a9ea6; font-weight: 900; letter-spacing: -2px; padding: 8px 6px; user-select: none; }
+.nav-label { flex: 1; min-width: 0; font-size: 14px; }
+.nav-move { display: flex; gap: 4px; }
+.nav-move button { background: #2b2d31; color: var(--text); border: 1px solid var(--border); border-radius: 8px; min-width: 30px; min-height: 30px; font-size: 12px; cursor: pointer; }
+.nav-move button[disabled] { opacity: .35; cursor: default; }
+
+/* ---------- Name spinner ---------- */
+.spin-layout { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; }
+.spin-stage { margin: 0; }
+.spin-side { display: grid; gap: 14px; }
+.spin-side .card { margin: 0; padding: 16px 18px; }
+.wheel-wrap { position: relative; width: min(100%, 520px); margin: 6px auto 0; }
+.wheel-canvas { display: block; width: 100%; height: auto; aspect-ratio: 1 / 1; }
+.wheel-pointer { position: absolute; left: 50%; top: -4px; transform: translateX(-50%); z-index: 2; width: 0; height: 0;
+  border-left: 16px solid transparent; border-right: 16px solid transparent; border-top: 34px solid #fff; filter: drop-shadow(0 2px 3px rgba(0,0,0,.6)); }
+.spin-btn { font-size: 20px; padding: 14px 34px; min-height: 54px; }
+.spin-result { min-height: 110px; margin-top: 14px; }
+.result-card { background: var(--field); border: 2px solid var(--success); border-radius: 16px; padding: 16px; text-align: center; display: grid; gap: 10px; }
+.result-name { font-size: 34px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }
+.pick-list { margin: 6px 0 0; padding-left: 22px; max-height: 220px; overflow-y: auto; font-size: 14px; }
+@media (max-width: 900px) { .spin-layout { grid-template-columns: minmax(0, 1fr); } }
+
+/* ---------- Class report ---------- */
+.report-kpis { margin-bottom: 0; }
+.report-table td, .report-table th { padding: 8px 8px; }
+.print-only.report-head { display: none; }
+@page report { size: landscape; margin: 12mm; }
+@media print {
+  .report-print { page: report; }
+  .print-only.report-head { display: block; margin-bottom: 8px; }
+  .report-head h1 { font-size: 20px; color: #000; }
+  .report-print details > summary { margin-bottom: 6px; }
+  .report-table { font-size: 11px; }
+  .kpi .label, .kpi .sub { color: #333; }
+  td.hot { background: #eee; color: #000; }
+  .spin-layout { display: block; }
+}
+
+.nav-edit-bar { padding: 0 6px 10px; }
+.nav-edit-bar .nav-help { margin: 8px 0 0; }
+.nav-row { gap: 4px; padding: 5px 5px 5px 2px; }
+.nav-handle { padding: 8px 3px; }
+.nav-label { font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.nav-move button { min-width: 26px; min-height: 28px; }
+.nav { gap: 3px; }
+
+@media print {
+  tr.totals td { background: #eee !important; color: #000 !important; }
+  td.pos, td.neg { color: #000 !important; }
+  .help, .muted { color: #333 !important; }
+}

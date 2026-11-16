@@ -7,6 +7,7 @@ import {
   assertNotLocked, recordFailure, clearFailures,
 } from '../lib/auth.js';
 import { json } from '../lib/util.js';
+import { loadNavOrder } from './prefs.js';
 
 const STAFF_HOURS = 12;
 const STUDENT_HOURS = 8;
@@ -82,8 +83,9 @@ add('POST', '/api/logout', 'any', async ({ env, session }) => {
 add('GET', '/api/me', 'any', async ({ env, session, user, student }) => {
   const settings = await getSettings(env);
   const today = todayStr(env);
+  const prefs = { nav_order: await loadNavOrder(env, session) };
   if (student) {
-    return { type: 'student', student, settings: { school_name: settings.school_name }, today };
+    return { type: 'student', student, settings: { school_name: settings.school_name }, today, prefs };
   }
   const period = await one(env, 'SELECT id, name, start_date, end_date FROM reward_periods WHERE ? BETWEEN start_date AND end_date ORDER BY start_date DESC LIMIT 1', today);
   const years = new Set([schoolYearOf(today)]);
@@ -103,6 +105,7 @@ add('GET', '/api/me', 'any', async ({ env, session, user, student }) => {
     school_year: schoolYearOf(today),
     years: [...years].sort().reverse(),
     current_period: period,
+    prefs,
   };
 });
 
