@@ -169,6 +169,10 @@ npm test                           # 260 automated checks
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.
 There is also a demo server with **fake** students for trying every screen: `node --no-warnings test/e2e-server.mjs`, then open http://localhost:8787 and sign in with `admin@example.org` / `admin-password-123`. It keeps everything in memory.
 
+### Changing the logo
+
+The school logo is `public/logo.png` (shown on the sign-in screen and above "Behavior Tracker" in the menu). The browser-tab icons are `public/favicon.ico`, `public/favicon-32.png`, and `public/apple-touch-icon.png` (the iPhone and iPad home-screen icon). To change them, replace those files with new images of the same names and upload them to GitHub. Browsers remember tab icons for a while, so a new one can take a refresh or a day to show up.
+
 ## How the pieces fit
 
 - `src/worker.js` receives every request, adds security headers, and sends `/api/*` to the routes. Everything else is served from `public/`.

@@ -18,14 +18,15 @@ async function showLogin(message) {
   let kind = 'staff';
   const paint = () => {
     mount(root, h`<div class="login-wrap"><div class="login-card">
-      <h1>\ud83d\udcd6 Behavior Tracker</h1>
+      <div class="logo-tile login-logo"><img src="/logo.png" width="640" height="289" alt="Panther logo"></div>
+      <h1 class="login-title">Behavior Tracker</h1>
       ${setup ? h`<p class="muted">Welcome! Create the first Admin account to get started. You\u2019ll need the setup token from your Cloudflare settings.</p>
         <div class="field"><label for="su_t">Setup token</label><input type="password" id="su_t" autocomplete="off"></div>
         <div class="field"><label for="su_n">Your name</label><input type="text" id="su_n" autocomplete="name"></div>
         <div class="field"><label for="su_e">Email</label><input type="email" id="su_e" autocomplete="username"></div>
         <div class="field"><label for="su_p">Password (12 or more characters)</label><input type="password" id="su_p" autocomplete="new-password"></div>
         <button class="btn primary w100" id="go">Create Admin account</button>`
-      : h`<p class="muted">Sign in to continue.</p>
+      : h`<p class="muted center">Sign in to continue.</p>
         <div class="seg mb16" id="kind" role="group" aria-label="Who is signing in"><button type="button" data-k="staff" aria-pressed="${kind === 'staff'}">Staff</button><button type="button" data-k="student" aria-pressed="${kind === 'student'}">Student</button></div>
         ${kind === 'staff' ? h`<div class="field"><label for="l_e">Email</label><input type="email" id="l_e" autocomplete="username"></div>
           <div class="field"><label for="l_p">Password</label><input type="password" id="l_p" autocomplete="current-password"></div>`
@@ -75,7 +76,7 @@ function shell() {
   const nav = staff ? [...STAFF_NAV, ...(me.user.role === 'admin' ? [['admin', '\u2699\ufe0f', 'Admin']] : [])] : STUDENT_NAV;
   const who = staff ? me.user.role[0].toUpperCase() + me.user.role.slice(1) : 'Student';
   mount(root, h`<div class="app">
-    <aside class="sidebar" id="sidebar" aria-label="Main navigation"><div class="brand">\ud83d\udcd6 BEHAVIOR<br>TRACKER</div>
+    <aside class="sidebar" id="sidebar" aria-label="Main navigation"><div class="brand"><span class="logo-tile"><img src="/logo.png" width="640" height="289" alt="Panther logo"></span><span>BEHAVIOR<br>TRACKER</span></div>
       <nav class="nav">${nav.map(([path, ico, label]) => h`<a href="#/${path}" data-path="${path}"><span class="ico">${ico}</span>${label}</a>`)}</nav>
       <div class="sidebar-foot">${me.settings.school_name}<br>${staff ? h`<a class="c-inherit" href="#/password">Change password</a>` : ''}</div></aside>
     <div class="main">

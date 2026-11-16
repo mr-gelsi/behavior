@@ -405,3 +405,12 @@ dialog::backdrop { background: rgba(0,0,0,.6); }
 .rw-main { display: grid; min-width: 0; }
 .rw-stock { min-width: 64px; text-align: right; }
 .chip.a-chip { text-decoration: none; }
+
+/* ---------- School logo (a light tile keeps the black logo readable on the dark theme) ---------- */
+.brand { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; }
+.logo-tile { display: block; background: #fff; border-radius: 14px; padding: 8px 12px; line-height: 0; }
+.logo-tile img { display: block; width: 100%; height: auto; }
+.brand .logo-tile { width: 148px; }
+.login-logo { width: 190px; margin: 0 auto 14px; }
+.login-title { text-align: center; }
+@media print { .logo-tile { border: 1px solid #999; } }
