@@ -37,3 +37,29 @@ const P = {
 
 export const icon = (name, size = 20) =>
   raw(`<svg class="i" viewBox="0 0 24 24" width="${size}" height="${size}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false">${P[name] || P.dashboard}</svg>`);
+
+// Trophies and medals. Colours are plain attributes (no inline styles) so they work under the strict CSP.
+const TIERS = {
+  gold: ['#f2b01e', '#ffe082', '#9a6400'], silver: ['#9ca7b6', '#e8ecf2', '#566273'],
+  bronze: ['#c27a3f', '#f0bf8f', '#74410f'], platinum: ['#5b8def', '#d4e3ff', '#24479f'], none: ['#cfd5de', '#f1f3f7', '#98a1b0'],
+};
+export const trophy = (tier, size = 72) => {
+  const [m, l, d] = TIERS[tier] || TIERS.none;
+  return raw(`<svg class="trophy" viewBox="0 0 64 64" width="${size}" height="${size}" role="img" aria-label="${tier || 'locked'} trophy">
+    <path d="M17 11H8v5a11 11 0 0 0 11 11M47 11h9v5a11 11 0 0 1-11 11" fill="none" stroke="${d}" stroke-width="3" stroke-linecap="round"/>
+    <path d="M17 6h30v17a15 15 0 0 1-30 0z" fill="${m}" stroke="${d}" stroke-width="2.2" stroke-linejoin="round"/>
+    <path d="M22 11v11a10 10 0 0 0 4 8" fill="none" stroke="${l}" stroke-width="3" stroke-linecap="round"/>
+    <path d="M32 12.5l2.4 4.9 5.4.8-3.9 3.8.9 5.4-4.8-2.5-4.8 2.5.9-5.4-3.9-3.8 5.4-.8z" fill="${l}" stroke="${d}" stroke-width="1.2" stroke-linejoin="round"/>
+    <path d="M28 38h8v8h-8z" fill="${m}" stroke="${d}" stroke-width="2"/>
+    <rect x="19" y="46" width="26" height="9" rx="2.5" fill="${m}" stroke="${d}" stroke-width="2.2"/>
+    <path d="M24 50.5h16" stroke="${l}" stroke-width="2" stroke-linecap="round"/></svg>`);
+};
+export const medal = (tier, label, size = 86) => {
+  const [m, l, d] = TIERS[tier] || TIERS.none;
+  const txt = tier ? '#ffffff' : '#98a1b0';
+  return raw(`<svg class="medal" viewBox="0 0 80 100" width="${size}" height="${Math.round(size * 1.25)}" role="img" aria-label="${tier || 'locked'} badge: ${label}">
+    <path d="M24 56 14 94l16-8 8 12 8-40z" fill="${d}" opacity=".85"/><path d="M56 56l10 38-16-8-8 12-8-40z" fill="${m}" stroke="${d}" stroke-width="1.5" stroke-linejoin="round"/>
+    <circle cx="40" cy="36" r="31" fill="${m}" stroke="${d}" stroke-width="3"/>
+    <circle cx="40" cy="36" r="24.5" fill="none" stroke="${l}" stroke-width="2.5"/>
+    <text x="40" y="${String(label).length > 2 ? 46 : 47}" text-anchor="middle" font-family="Inter, system-ui, sans-serif" font-weight="800" font-size="${String(label).length > 2 ? 22 : 30}" fill="${txt}">${label}</text></svg>`);
+};

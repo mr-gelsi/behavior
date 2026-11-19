@@ -5,6 +5,8 @@ import { V, bad, todayStr } from '../lib/util.js';
 import { cancelOrder } from './store.js';
 import { availableSql } from '../lib/store.js';
 import { breakCounts } from '../lib/breaks.js';
+import { trophiesFor, badgesFor } from '../lib/awards.js';
+import { lastNameOf } from '../lib/util.js';
 
 add('GET', '/api/student/home', 'student', async ({ env, student }) => {
   const id = student.student_id;
@@ -35,7 +37,9 @@ add('GET', '/api/student/home', 'student', async ({ env, student }) => {
     student: { student_id: id, first_name: student.first_name, last_name: student.last_name, grade: student.grade },
     balance: t.balance, earned: t.earned, spent: t.spent, fines_total: t.fines,
     period,
-    bonuses, fines, steps,
+    bonuses, fines, steps: steps.map((x) => ({ ...x, teacher: lastNameOf(x.teacher) })),
+    trophies: await trophiesFor(env, id, today),
+    badges: await badgesFor(env, id, today),
     breaks: await breakCounts(env, id, today, period),
     on_break: !!(await one(env, "SELECT 1 AS x FROM break_log WHERE student_id = ? AND status = 'out'", id)),
     ledger: await all(env,
@@ -49,7 +53,7 @@ add('GET', '/api/student/store', 'student', async ({ env, student }) => {
   const balance = await balanceOf(env, student.student_id);
   const items = await all(env,
     `SELECT i.id, i.name, i.description, i.price, i.stock, i.max_per_student, i.emoji,
-            CASE WHEN i.owner_id IS NULL THEN NULL ELSE u.name END AS offered_by,
+            CASE WHEN i.owner_id IS NULL THEN NULL ELSE COALESCE(u.last_name, u.name) END AS offered_by,
             (SELECT COUNT(*) FROM store_orders o WHERE o.item_id = i.id AND o.student_id = ? AND o.status <> 'cancelled') AS mine
        FROM store_items i LEFT JOIN users u ON u.id = i.owner_id
       WHERE ${availableSql(student.student_id)} ORDER BY i.price, i.name`, student.student_id);

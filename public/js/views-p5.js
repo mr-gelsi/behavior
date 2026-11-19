@@ -47,7 +47,8 @@ export async function p5(el) {
       <div id="fineStep" class="card hidden card-alt">
         <label class="check"><input type="checkbox" id="addStep"> Also add a step to this student\u2019s record</label>
         <div id="stepFields" class="hidden mt12">
-          <div class="field"><label>Step level</label><div class="step-btns" id="stepbtns">${[1, 2, 3, 4, 5].map((n) => h`<button type="button" class="step-btn s${n}" data-step="${n}" aria-pressed="false">Step ${n}</button>`)}</div></div>
+          <div class="field"><label>Step level</label>
+            <div class="banner warn floor-note hidden" id="floornote" role="status"></div><div class="step-btns" id="stepbtns">${[1, 2, 3, 4, 5].map((n) => h`<button type="button" class="step-btn s${n}" data-step="${n}" aria-pressed="false">Step ${n}</button>`)}</div></div>
           <div class="form-grid"><div><label for="sp">Period (optional)</label><select id="sp">${PERIODS.map((p) => h`<option value="${p}">${p || 'None'}</option>`)}</select></div></div>
           <div class="help">The step uses the same reason and note as the fine, and the same date. If more than one student is selected, each gets a step.</div>
         </div>
@@ -63,7 +64,8 @@ export async function p5(el) {
       <button class="btn" id="rrun">Show totals</button><div class="mt14" id="rout"></div></details>`);
 
   const err = $('#err', el);
-  const picker = studentPicker($('#picker', el), { multi: true, onChange: syncFineStep });
+  let picker;
+  picker = studentPicker($('#picker', el), { multi: true, onChange: syncFineStep });
   function paintMode() {
     $$('#mode button', el).forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.mode === form.mode)));
     $('#mode', el).className = 'seg ' + form.mode;
@@ -71,7 +73,31 @@ export async function p5(el) {
     $('#save', el).className = 'btn ' + (form.mode === 'award' ? 'primary' : 'primary');
     $('#fineStep', el).classList.toggle('hidden', form.mode !== 'fine');
   }
-  function syncFineStep() { /* label wording only */ }
+  // Steps compound for 7 days from the same teacher: grey out levels that every selected student has already used.
+  let floors = {};
+  async function syncFineStep() {
+    if (!picker) return;
+    const list = picker.get();
+    const note = $('#floornote', el);
+    const set = (min, msg) => {
+      $$('#stepbtns button', el).forEach((b) => {
+        const off = Number(b.dataset.step) < min;
+        b.disabled = off; b.classList.toggle('greyed', off);
+        if (off && Number(b.dataset.step) === stepLevel) { stepLevel = null; b.setAttribute('aria-pressed', 'false'); }
+      });
+      note.textContent = msg || ''; note.classList.toggle('hidden', !msg);
+    };
+    if (!list.length || form.mode !== 'fine') { floors = {}; set(1, ''); return; }
+    try {
+      floors = (await api(`/steps/floor?students=${list.map((s) => s.student_id).join(',')}&date=${encodeURIComponent($('#pd', el).value)}`)).floors;
+    } catch { return; }
+    const mins = list.map((s) => floors[s.student_id] ? floors[s.student_id].min : 1);
+    const hold = list.filter((s) => floors[s.student_id] && floors[s.student_id].min > 1);
+    set(Math.min(...mins), hold.length
+      ? 'Steps compound for 7 days from the same teacher. ' + hold.slice(0, 6).map((s) => `${s.first_name} ${s.last_name} needs Step ${floors[s.student_id].min > 5 ? '(none left this week)' : floors[s.student_id].min + ' or higher'}`).join('; ') + (hold.length > 6 ? `; and ${hold.length - 6} more` : '') + '.'
+      : '');
+  }
+  $('#pd', el).addEventListener('change', syncFineStep);
   function paintCat() { $$('#cats button', el).forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.cat) === form.cat))); }
   function paintAmt() {
     $$('#amts [data-amt]', el).forEach((b) => b.setAttribute('aria-pressed', String(Number(b.dataset.amt) === form.amount)));
@@ -80,7 +106,7 @@ export async function p5(el) {
   }
   paintMode(); paintCat(); paintAmt();
 
-  $$('#mode button', el).forEach((b) => b.addEventListener('click', () => { form.mode = b.dataset.mode; paintMode(); }));
+  $$('#mode button', el).forEach((b) => b.addEventListener('click', () => { form.mode = b.dataset.mode; paintMode(); syncFineStep(); }));
   $$('#cats button', el).forEach((b) => b.addEventListener('click', () => { form.cat = Number(b.dataset.cat); paintCat(); }));
   $$('#amts [data-amt]', el).forEach((b) => b.addEventListener('click', () => { form.amount = Number(b.dataset.amt); paintAmt(); }));
   $('#amt', el).addEventListener('input', (e) => { form.amount = e.target.value ? Number(e.target.value) : null; $$('#amts [data-amt]', el).forEach((b) => b.setAttribute('aria-pressed', 'false')); });
@@ -111,6 +137,10 @@ export async function p5(el) {
     if (!form.cat) { err.textContent = 'Choose what the points are for.'; return; }
     if (!form.amount || form.amount < 1) { err.textContent = 'Enter an amount.'; return; }
     const addStep = form.mode === 'fine' && $('#addStep', el).checked;
+    if (addStep && stepLevel) {
+      const low = students.filter((s) => floors[s.student_id] && stepLevel < floors[s.student_id].min);
+      if (low.length) { err.textContent = `${low.slice(0, 3).map((s) => s.first_name + ' ' + s.last_name).join(', ')}${low.length > 3 ? ` and ${low.length - 3} more` : ''} already ha${low.length === 1 ? 's' : 've'} a step this week, so Step ${stepLevel} is too low. Pick a higher step, or remove them.`; return; }
+    }
     if (addStep && !stepLevel) { err.textContent = 'Choose a step level, or untick \u201cAlso add a step\u201d.'; return; }
     const cat = cats.find((c) => c.id === form.cat);
     if (form.mode === 'fine' || students.length > 10) {

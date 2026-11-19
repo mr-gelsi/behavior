@@ -753,3 +753,22 @@ dialog::backdrop { background: rgba(10, 12, 16, .7); }
 .desk:not(.empty) .dname, .desk:not(.teacher) .dname { color: #000; }
 .desk.teacher .dname { color: #000; }
 .desk:not(.empty) .dsub { color: #333; }
+
+/* Step levels already used inside the 7-day window are greyed out */
+.step-btn:disabled, .step-btn.greyed { opacity: .38; background: #e6e9ef; color: #6b7585; cursor: not-allowed; text-decoration: line-through; border-style: dashed; }
+.hidden-note { display: none; }
+
+/* Trophies and badges */
+.shelf { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 12px; margin: 10px 0 4px; }
+.award-tile { background: var(--field); border-radius: 18px; padding: 14px 10px 12px; text-align: center; display: grid; justify-items: center; gap: 2px; }
+.award-tile.locked { opacity: .6; }
+.award-tile .at-title { font-weight: 800; font-size: 15px; }
+.award-tile .at-sub { font-size: 12.5px; color: var(--muted); }
+.tier-gold .at-title { color: #8a5a00; } .tier-silver .at-title { color: #4a5668; } .tier-bronze .at-title { color: #74410f; } .tier-platinum .at-title { color: #24479f; }
+.badge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin-top: 14px; }
+.badge-card { display: flex; gap: 14px; align-items: center; background: var(--field); border-radius: 18px; padding: 12px 16px; }
+.badge-card h3 { margin: 0 0 2px; font-size: 16px; }
+.badge-card p { margin: 0; font-size: 13px; color: var(--muted); }
+.prog { height: 8px; background: #dfe3ea; border-radius: 99px; overflow: hidden; margin-top: 8px; max-width: 220px; }
+.prog > i { display: block; height: 100%; background: var(--accent); border-radius: 99px; }
+.floor-note { margin: 6px 0 10px; }

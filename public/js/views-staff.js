@@ -127,6 +127,7 @@ export async function record(el) {
       <div class="field"><label>Student</label><div id="picker"></div></div>
       <div id="context"></div>
       <div class="field"><label>Step level</label>
+        <div class="banner warn floor-note hidden" id="floornote" role="status"></div>
         <div class="step-btns" id="stepbtns">${[1, 2, 3, 4, 5].map((n) => h`<button type="button" class="step-btn s${n}" data-step="${n}" aria-pressed="false">Step ${n}</button>`)}</div></div>
       <div class="form-grid">
         <div><label for="sd">Date</label><input type="date" id="sd" value="${me.today}"></div>
@@ -156,9 +157,37 @@ export async function record(el) {
     $$('#stepbtns button', el).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
   }));
 
+  // Steps compound for 7 days from the same teacher, so levels already used in that window are greyed out.
+  const applyMin = (min, msg) => {
+    $$('#stepbtns button', el).forEach((b) => {
+      const off = Number(b.dataset.step) < min;
+      b.disabled = off; b.classList.toggle('greyed', off);
+      b.title = off ? 'Already used in the last 7 days. Steps compound.' : '';
+      if (off && Number(b.dataset.step) === level) { level = null; b.setAttribute('aria-pressed', 'false'); }
+    });
+    const note = $('#floornote', el);
+    note.textContent = msg || '';
+    note.classList.toggle('hidden', !msg);
+  };
+  let picker;
+  const refreshFloor = async () => {
+    const s = picker ? picker.get()[0] : null;
+    if (!s) { applyMin(1, ''); return; }
+    try {
+      const teacher = $('#st', el).value;
+      const f = (await api(`/steps/floor?students=${s.student_id}&date=${encodeURIComponent($('#sd', el).value)}&teacher=${encodeURIComponent(teacher)}`)).floors[s.student_id];
+      if (f.min <= 1) applyMin(1, '');
+      else if (f.min > 5) applyMin(f.min, `${s.first_name} already has a Step 5 from ${teacher} this week, so no more steps can be given until ${fmtMD(f.end)} is over.`);
+      else applyMin(f.min, `${s.first_name} already has a Step ${f.last} from ${teacher} (${fmtMD(f.start)}). Steps compound until ${fmtMD(f.end)}, so the lowest step you can give now is Step ${f.min}.`);
+    } catch (e) { /* the server checks again when you save */ }
+  };
+  $('#sd', el).addEventListener('change', refreshFloor);
+  $('#st', el).addEventListener('change', refreshFloor);
+
   const ctx = $('#context', el);
-  const picker = studentPicker($('#picker', el), {
+  picker = studentPicker($('#picker', el), {
     onChange: async (list) => {
+      refreshFloor();
       if (!list.length) { mount(ctx, h``); return; }
       try {
         const d = await api('/students/' + list[0].student_id);
@@ -197,7 +226,7 @@ export async function record(el) {
         } else throw e;
       }
       toast(`Step ${level} saved for ${s.first_name} ${s.last_name}.`);
-      picker.clear(); level = null;
+      picker.clear(); level = null; applyMin(1, '');
       $$('#stepbtns button', el).forEach((x) => x.setAttribute('aria-pressed', 'false'));
       $('#sn', el).value = '';
       picker.focus();

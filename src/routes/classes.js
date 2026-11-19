@@ -361,7 +361,7 @@ add('POST', '/api/student/classes/join', 'student', async (c) => {
   };
   if (code.length !== 6) return fail();
   const cls = await one(env,
-    `SELECT c.id, c.name, c.period, c.join_open, c.archived, u.name AS teacher
+    `SELECT c.id, c.name, c.period, c.join_open, c.archived, COALESCE(u.last_name, u.name) AS teacher
        FROM classes c JOIN users u ON u.id = c.owner_id WHERE c.code = ?`, code);
   if (!cls || cls.archived || !cls.join_open) return fail();
   const r = await run(env, "INSERT OR IGNORE INTO class_members (class_id, student_id, source) VALUES (?, ?, 'code')", cls.id, student.student_id);
@@ -372,7 +372,7 @@ add('POST', '/api/student/classes/join', 'student', async (c) => {
 
 add('GET', '/api/student/classes', 'student', async ({ env, student }) => ({
   classes: await all(env,
-    `SELECT c.id, c.name, c.period, u.name AS teacher
+    `SELECT c.id, c.name, c.period, COALESCE(u.last_name, u.name) AS teacher
        FROM class_members m JOIN classes c ON c.id = m.class_id JOIN users u ON u.id = c.owner_id
       WHERE m.student_id = ? AND c.archived = 0 ORDER BY c.period, c.name`, student.student_id),
 }));

@@ -188,7 +188,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 376 automated checks
+npm test                           # 427 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.
@@ -213,3 +213,13 @@ There is also a demo server with **fake** students for trying every screen: `nod
 
 - **Student passwords:** after signing in with the PIN, students are asked to create their own password (8+ characters). From then on they sign in with their student ID and that password and the PIN stops working. An admin PIN reset clears the password, so the student starts over with the new PIN. Run `migrations/0008_student_passwords.sql` once (console copy: `0008_student_passwords_console.sql`).
 - The Student tab is now first on the sign-in page, and Monthly Report lives only under Behavior Reports.
+
+- **Steps compound (7 days):** a teacher's first step starts a 7-day window for that student. Any more steps from the same teacher inside the window must be higher than the highest one so far (Step 1, then 2, 3, 4, 5). After the 7 days the chain resets. On Record Steps and on a P5 fine with a step, the levels already used are greyed out, and the server refuses a lower step even if the page is bypassed. An admin can override a single step.
+- **Trophies:** top P5 ticket earners in each Rewards period (tickets awarded, not counting ones taken back, across all active students): Gold for the top 10%, Silver 11-20%, Bronze 21-30%. The current period shows "so far" until it ends.
+- **Badges:** step-free weeks (one for every full 7 days since the last step, or since the school year began) and days in class (school days, Monday-Friday, since the last restroom/water break). Each has Bronze, Silver, Gold and Platinum levels.
+- **Teacher names for students:** students see only a teacher's last name (steps, classes, store items, break release).
+- No new migration is needed for this update.
+
+- **Trophies are per grade:** a student is ranked only against students in the same grade (top 10% gold, 11-20% silver, 21-30% bronze).
+- **School calendar (Admin > School calendar):** upload a CSV (date, end_date, label, type) or add days one at a time. Days off (holidays, breaks, teacher days) and extra school days are stored per school year. Weekends are always skipped; with no calendar loaded, every weekday counts. Run `migrations/0009_school_calendar.sql` once (console copy: `0009_school_calendar_console.sql`).
+- **Both badges count school days:** "school days without a step" and "school days in class" (no restroom/water break) use the calendar. Today is never counted until it is over.

@@ -2,6 +2,7 @@ import { add } from '../router.js';
 import { all, one, st, batch, audit, getSettings } from '../lib/db.js';
 import { V, bad, HttpError, todayStr, schoolYearOf } from '../lib/util.js';
 import { afterStepChange } from './students.js';
+import { stepFloors, floorMessage } from '../lib/steps.js';
 
 add('GET', '/api/p5/categories', 'any', async ({ env }) => ({
   categories: await all(env, 'SELECT id, name, emoji, color FROM p5_categories ORDER BY sort'),
@@ -27,6 +28,19 @@ add('POST', '/api/p5', 'staff', async (c) => {
 
   const found = await all(env, `SELECT student_id FROM students WHERE active = 1 AND student_id IN (${ids.map(() => '?').join(',')})`, ...ids);
   if (found.length !== ids.length) throw bad('One or more students were not found.');
+
+  if (wantStep) {
+    const floors = await stepFloors(env, ids, user.name, user.email, date);
+    const blocked = [];
+    for (const id of ids) if (level < floors[id].min) blocked.push(`Student ${id}: next step must be Step ${floors[id].min > 5 ? '(none left this week)' : floors[id].min + ' or higher'}`);
+    if (blocked.length) {
+      const names = await all(env, `SELECT student_id, first_name, last_name FROM students WHERE student_id IN (${ids.map(() => '?').join(',')})`, ...ids);
+      const nm = (id) => { const n = names.find((x) => x.student_id === id); return n ? `${n.first_name} ${n.last_name}` : `Student ${id}`; };
+      const first = ids.find((id) => level < floors[id].min);
+      const more = ids.filter((id) => level < floors[id].min).length - 1;
+      throw new HttpError(400, floorMessage(nm(first), user.name, floors[first]) + (more > 0 ? ` (${more} other student${more === 1 ? '' : 's'} also need a higher step.)` : ''), { floors });
+    }
+  }
 
   const sign = mode === 'award' ? 1 : -1;
   const stmts = [];

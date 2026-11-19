@@ -1,12 +1,32 @@
 import { state, api, h, raw, mount, $, $$, toast, fail, confirmBox, fmtMD, fmtDate, fmtDT, pct } from './core.js';
 
-import { icon } from './icons.js';
+import { icon, trophy, medal } from './icons.js';
 import { openBreakModal } from './views-breaks.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
 const TYPE_LABEL = { award: 'Earned', fine: 'Fine', purchase: 'Store', refund: 'Refund', seat: 'Rewards Day seat', seat_refund: 'Seat refund', adjustment: 'Adjustment' };
 
 const nf = (n) => Number(n).toLocaleString();
+
+const TIER_NAME = { gold: 'Gold', silver: 'Silver', bronze: 'Bronze' };
+function trophyShelf(d) {
+  const won = d.trophies.filter((t) => t.tier);
+  const cur = d.trophies.find((t) => t.current);
+  const status = cur
+    ? (cur.tier ? h`<p class="muted small">${cur.name} so far: you are in the top ${cur.top_percent}% of your grade, which is a ${TIER_NAME[cur.tier]} trophy. It becomes final when the period ends.</p>`
+      : cur.earned ? h`<p class="muted small">${cur.name} so far: you are in the top ${cur.top_percent}% of your grade. Reach the top 30% for a trophy.</p>`
+      : h`<p class="muted small">Earn P5 tickets in ${cur.name} to win a trophy.</p>`)
+    : h``;
+  return h`<p class="muted">Trophies go to the top ticket earners in your grade for each rewards period: <strong>Gold</strong> for the top 10%, <strong>Silver</strong> for 11\u201320%, <strong>Bronze</strong> for 21\u201330%.</p>${status}
+    ${won.length ? h`<div class="shelf">${won.map((t) => h`<div class="award-tile tier-${t.tier}">${trophy(t.tier, 76)}<div class="at-title">${TIER_NAME[t.tier]}</div><div class="at-sub">${t.name}${t.final ? '' : ' (so far)'}</div><div class="at-sub">${t.earned} tickets earned</div></div>`)}</div>`
+      : h`<div class="shelf"><div class="award-tile locked">${trophy(null, 76)}<div class="at-title">No trophies yet</div><div class="at-sub">Your first one is waiting</div></div></div>`}`;
+}
+function badgeCard(title, b, unit, help, pct) {
+  const next = b.next ? `${b.next.need} more ${unit}${b.next.need === 1 ? '' : 's'} to ${b.next.name}` : 'Top level reached!';
+  return h`<div class="badge-card">${medal(b.tier, String(b.count))}
+    <div><h3>${b.count} ${title}</h3><p>${b.tier ? b.tier[0].toUpperCase() + b.tier.slice(1) + ' level. ' : ''}${next}</p><p>${help}</p>
+    ${pct === null ? '' : h`<div class="prog" aria-hidden="true"><i data-w="${pct}"></i></div>`}</div></div>`;
+}
 
 export async function studentHome(el) {
   loading(el);
@@ -38,6 +58,14 @@ export async function studentHome(el) {
       <button type="button" class="bank-btn" data-p="fines" aria-expanded="false">${icon('alert', 26)}<span class="bb-text"><strong>Fines &amp; steps</strong><span>${per ? per.name : 'This rewards period'} \u00b7 ${d.steps.length} step${d.steps.length === 1 ? '' : 's'}</span></span><span class="bb-amt neg">${fineTotal ? '\u2212' + nf(fineTotal) : '0'}</span></button>
     </div>
     <div id="bankpanel"></div>
+
+    <div class="card mt16"><h2>${icon('star', 20)} <span class="ml6">Trophies &amp; badges</span></h2>
+      ${trophyShelf(d)}
+      <div class="badge-grid">
+        ${badgeCard('school days without a step', d.badges.step_free_days, 'day', 'Counts up every school day you go without getting a step.', null)}
+        ${badgeCard('school days in class', d.badges.no_leave_days, 'day', 'Counts up every school day you do not leave class for the restroom or water.', null)}
+      </div>
+    </div>
 
     <div class="grid-2 mt16">
       <div class="card"><h2>${icon('drop', 20)} <span class="ml6">Restroom &amp; water breaks</span></h2>

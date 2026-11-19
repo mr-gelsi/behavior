@@ -3,7 +3,7 @@ import {
 } from './core.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
-const TABS = [['roster', 'Roster and PINs'], ['import', 'Import steps'], ['periods', 'Reward periods'], ['settings', 'Settings'], ['users', 'Staff users'], ['audit', 'Audit and export']];
+const TABS = [['roster', 'Roster and PINs'], ['import', 'Import steps'], ['periods', 'Reward periods'], ['calendar', 'School calendar'], ['settings', 'Settings'], ['users', 'Staff users'], ['audit', 'Audit and export']];
 
 export async function admin(el) {
   const tab = state.adminTab || 'roster';
@@ -12,7 +12,7 @@ export async function admin(el) {
     <div id="body"><div class="spinner">Loading\u2026</div></div>`);
   $$('.tabs button', el).forEach((b) => b.addEventListener('click', () => { state.adminTab = b.dataset.t; admin(el).catch(fail); }));
   const body = $('#body', el);
-  await ({ roster, import: importSteps, periods, settings, users, audit }[tab])(body, () => admin(el).catch(fail));
+  await ({ roster, import: importSteps, periods, calendar, settings, users, audit }[tab])(body, () => admin(el).catch(fail));
 }
 
 // Excel exports dates as serial numbers in some cases.
@@ -361,4 +361,100 @@ export function pinSheet(el) {
   $('#print', el).addEventListener('click', () => window.print());
   $('#csv', el).addEventListener('click', () => downloadCsv('student-pins.csv', ['Grade', 'Homeroom', 'Last name', 'First name', 'Student ID', 'PIN'], list.map((s) => [s.grade, s.homeroom_teacher, s.last_name, s.first_name, s.student_id, s.pin])));
   window.addEventListener('hashchange', () => { state.pinSheet = null; }, { once: true });
+}
+
+
+// ======================================================================================
+// School calendar (days with no school, and extra school days). Used to count school days for badges.
+// ======================================================================================
+async function calendar(body, again) {
+  const year = state.calYear || state.year;
+  const d = await api('/admin/calendar?year=' + encodeURIComponent(year));
+  const months = new Map();
+  for (const x of d.days) { const k = x.date.slice(0, 7); if (!months.has(k)) months.set(k, []); months.get(k).push(x); }
+  const monthName = (k) => new Date(k + '-15T12:00:00Z').toLocaleDateString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' });
+  mount(body, h`
+    <div class="card"><h2>School calendar \u2022 ${d.year}</h2>
+      <p class="muted">Monday to Friday count as school days unless you list them here as days off (holidays, breaks, teacher days). The Trophies &amp; badges pages use this to count real school days. Weekends are always skipped; a day marked \u201cschool\u201d counts even on a weekend (for example a make-up Saturday).</p>
+      ${d.days.length ? '' : h`<div class="banner warn">No days off are listed for ${d.year} yet, so every weekday currently counts as a school day. Upload your calendar below.</div>`}
+      <div class="kpi-grid"><div class="kpi"><div class="label">School days so far</div><div class="big">${d.school_days_so_far}</div><div class="sub">since ${fmtDate(d.year_start)}</div></div>
+        <div class="kpi"><div class="label">Days off listed</div><div class="big">${d.days.filter((x) => x.kind === 'off').length}</div><div class="sub">in ${d.year}</div></div></div>
+      <div class="form-grid"><div><label for="cy">School year</label><select id="cy">${[...new Set([state.year, ...d.years, d.year])].sort().reverse().map((y) => h`<option value="${y}" ${y === d.year ? raw('selected') : ''}>${y}</option>`)}</select></div></div>
+    </div>
+
+    <div class="card"><h2>Upload a calendar (CSV)</h2>
+      <p class="muted">One row per day off, or per range. Columns: <strong>date</strong>, <strong>end_date</strong> (optional, for a range like winter break), <strong>label</strong>, <strong>type</strong> (<em>off</em> or <em>school</em>; blank means off). Dates can be 11/26/2026 or 2026-11-26. You can export a sheet from Excel or Google Sheets as CSV.</p>
+      <div class="row"><button class="btn" id="tmpl" type="button">${'Download a template'}</button></div>
+      <div class="field mt12"><label for="cf">CSV file</label><input type="file" id="cf" accept=".csv,.txt,text/csv"></div>
+      <label class="check mb12"><input type="checkbox" id="crep"> Replace everything already saved for the school year(s) in this file (leave unticked to add to what is there)</label>
+      <div id="cprev"></div></div>
+
+    <div class="card"><h2>Add or change one day</h2>
+      <div class="form-grid">
+        <div><label for="a_d">Date</label><input type="date" id="a_d"></div>
+        <div><label for="a_e">Last day (optional, for a range)</label><input type="date" id="a_e"></div>
+        <div><label for="a_l">Label</label><input type="text" id="a_l" maxlength="80" placeholder="Thanksgiving break"></div>
+        <div><label for="a_k">Type</label><select id="a_k"><option value="off">Day off (no school)</option><option value="school">Extra school day</option></select></div>
+      </div>
+      <div class="row"><button class="btn primary" id="a_go" type="button">Save</button><span class="error-text" id="a_err" role="alert"></span></div></div>
+
+    <div class="card"><h2>Days listed</h2>
+      ${d.days.length ? [...months].map(([k, list]) => h`<h3 class="mt12">${monthName(k)}</h3><div class="table-wrap"><table><tbody>
+        ${list.map((x) => h`<tr><td class="nowrap">${fmtDate(x.date)}</td><td>${x.label || ''}</td><td>${x.kind === 'school' ? h`<span class="chip ok">Extra school day</span>` : h`<span class="chip gray">No school</span>`}</td>
+          <td class="right"><button class="btn small danger" data-del="${x.date}" type="button" aria-label="Remove ${x.date}">Remove</button></td></tr>`)}</tbody></table></div>`)
+        : h`<div class="empty"><strong>Nothing listed yet</strong>Upload a file above or add days one at a time.</div>`}</div>`);
+
+  $('#cy', body).addEventListener('change', (e) => { state.calYear = e.target.value; again(); });
+  $('#tmpl', body).addEventListener('click', () => downloadCsv('school-calendar-template.csv', ['date', 'end_date', 'label', 'type'], [
+    ['2026-11-26', '2026-11-27', 'Thanksgiving break', 'off'], ['2026-12-21', '2027-01-01', 'Winter break', 'off'], ['2027-01-18', '', 'MLK Day', 'off'], ['2027-02-13', '', 'Make-up day (Saturday)', 'school']]));
+  $$('[data-del]', body).forEach((b) => b.addEventListener('click', async () => {
+    try { await api('/admin/calendar/' + b.dataset.del, { method: 'DELETE' }); toast('Removed.'); again(); } catch (e) { fail(e); }
+  }));
+  $('#a_go', body).addEventListener('click', async () => {
+    const err = $('#a_err', body); err.textContent = '';
+    if (!$('#a_d', body).value) { err.textContent = 'Pick a date.'; return; }
+    try {
+      await api('/admin/calendar/import', { method: 'POST', body: { rows: [{ date: $('#a_d', body).value, end_date: $('#a_e', body).value || null, label: $('#a_l', body).value || null, kind: $('#a_k', body).value }] } });
+      toast('Saved.'); again();
+    } catch (e) { err.textContent = e.message; }
+  });
+
+  $('#cf', body).addEventListener('change', async (e) => {
+    const f = e.target.files[0];
+    const prev = $('#cprev', body);
+    if (!f) return;
+    try {
+      const rows = parseCsv(await readFileText(f));
+      const first = rows[0] || [];
+      const hasHeader = !toIso(first[0]);
+      const head = hasHeader ? first.map(key) : [];
+      const col = (names, pos) => { const i = head.findIndex((x) => names.includes(x)); return i >= 0 ? i : (hasHeader ? -1 : pos); };
+      const cDate = col(['date', 'startdate', 'start', 'day'], 0);
+      const cEnd = col(['enddate', 'end', 'lastday', 'through', 'to'], 1);
+      const cLabel = col(['label', 'name', 'description', 'reason', 'note'], 2);
+      const cType = col(['type', 'kind'], 3);
+      const out = [], bad = [];
+      for (const [i, r] of rows.slice(hasHeader ? 1 : 0).entries()) {
+        const date = toIso(r[cDate]);
+        if (!date) { bad.push(i + (hasHeader ? 2 : 1)); continue; }
+        let end = cEnd >= 0 ? toIso(r[cEnd]) : null;
+        let label = cLabel >= 0 ? r[cLabel] : '';
+        if (!hasHeader && !end && r[1] && !toIso(r[1])) label = r[1]; // simple two-column file: date, label
+        const t = String(cType >= 0 ? r[cType] || '' : '').toLowerCase();
+        out.push({ date, end_date: end && end !== date ? end : null, label: String(label || '').trim() || null, kind: /school|extra|make/.test(t) ? 'school' : 'off' });
+      }
+      if (!out.length) { mount(prev, h`<div class="banner danger">I couldn\u2019t find any dates in that file. The first column should be the date.</div>`); return; }
+      mount(prev, h`${bad.length ? h`<div class="banner warn">Skipped ${bad.length} row${bad.length === 1 ? '' : 's'} without a readable date (row${bad.length === 1 ? '' : 's'} ${bad.slice(0, 8).join(', ')}).</div>` : ''}
+        <p>Ready to import <strong>${out.length}</strong> row${out.length === 1 ? '' : 's'}: ${out.slice(0, 4).map((x) => `${x.date}${x.end_date ? '\u2013' + x.end_date : ''} ${x.label || ''}`).join('; ')}${out.length > 4 ? '\u2026' : ''}</p>
+        <button class="btn primary" id="cgo" type="button">Import calendar</button>`);
+      $('#cgo', body).addEventListener('click', async () => {
+        try {
+          const r = await api('/admin/calendar/import', { method: 'POST', body: { rows: out, replace: $('#crep', body).checked } });
+          toast(`Saved ${r.days} day${r.days === 1 ? '' : 's'}.`);
+          if (r.years[0]) state.calYear = r.years[0];
+          again();
+        } catch (e2) { mount(prev, h`<div class="banner danger">${e2.message}</div>`); }
+      });
+    } catch (e3) { fail(e3); }
+  });
 }

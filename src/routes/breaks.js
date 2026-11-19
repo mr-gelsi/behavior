@@ -4,7 +4,7 @@
 // All times come from the server clock, never from the browser.
 import { add } from '../router.js';
 import { all, one, run, audit } from '../lib/db.js';
-import { V, bad, todayStr, schoolYearOf, HttpError, isDate } from '../lib/util.js';
+import { V, bad, todayStr, schoolYearOf, HttpError, isDate, lastNameOf } from '../lib/util.js';
 import { hashTeacherPin } from '../lib/crypto.js';
 import { assertNotLocked, recordFailure, clearFailures } from '../lib/auth.js';
 
@@ -47,7 +47,7 @@ add('POST', '/api/student/break/start', 'student', async ({ env, student, body, 
     throw e;
   }
   await audit(env, actor, 'break.start', `reason=${reason} teacher=${t.id}`);
-  return { ok: true, active: await activeBreak(env, student.student_id), server_now: new Date().toISOString(), released_by: t.name };
+  return { ok: true, active: await activeBreak(env, student.student_id), server_now: new Date().toISOString(), released_by: lastNameOf(t.name) };
 });
 
 add('POST', '/api/student/break/return', 'student', async ({ env, student, body, actor }) => {

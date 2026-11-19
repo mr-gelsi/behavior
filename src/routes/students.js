@@ -1,3 +1,4 @@
+import { stepFloors, floorMessage } from '../lib/steps.js';
 import { add } from '../router.js';
 import { all, one, st, batch, audit, balanceOf } from '../lib/db.js';
 import { V, bad, HttpError, todayStr, schoolYearOf } from '../lib/util.js';
@@ -97,6 +98,14 @@ add('GET', '/api/steps/recent', 'staff', async ({ env, url }) => {
   return { steps: rows };
 });
 
+// Which step levels are still allowed for these students, given the teacher's steps in the last 7 days.
+add('GET', '/api/steps/floor', 'staff', async ({ env, url, user }) => {
+  const ids = (url.searchParams.get('students') || '').split(',').map((x) => Number(x)).filter((x) => Number.isInteger(x) && x > 0).slice(0, 150);
+  const date = V.date(url.searchParams.get('date') || todayStr(env), 'Date');
+  const teacher = V.str(url.searchParams.get('teacher') || user.name, 'Teacher', { max: 80 });
+  return { floors: await stepFloors(env, ids, teacher, user.email, date) };
+});
+
 add('POST', '/api/steps', 'staff', async (c) => {
   const { env, body, user } = c;
   const studentId = V.int(body.student_id, 'Student', { min: 1 });
@@ -108,6 +117,10 @@ add('POST', '/api/steps', 'staff', async (c) => {
   const code = V.str(body.code, 'Code', { max: 20, optional: true });
   const s = await one(env, 'SELECT student_id FROM students WHERE student_id = ? AND active = 1', studentId);
   if (!s) throw bad('That student was not found.');
+  if (!(user.role === 'admin' && body.override)) {
+    const f = (await stepFloors(env, [studentId], teacher, user.email, date))[studentId];
+    if (level < f.min) throw new HttpError(400, floorMessage('This student', teacher, f), { floor: f });
+  }
   if (!body.force) {
     const dup = await one(env, 'SELECT id FROM steps WHERE student_id = ? AND step_level = ? AND step_date = ?', studentId, level, date);
     if (dup) throw new HttpError(409, 'This student already has this step on this date.', { duplicate: true });
