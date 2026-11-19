@@ -117,7 +117,7 @@ async function roster(body, again) {
     try {
       const { students } = await api(`/admin/students?q=${encodeURIComponent(q)}${inactive ? '&inactive=1' : ''}`);
       mount($('#flist', body), students.length ? h`<div class="table-wrap"><table><thead><tr><th>ID</th><th>Name</th><th>Gr</th><th>Homeroom</th><th>PIN</th><th></th></tr></thead><tbody>
-        ${students.map((s) => h`<tr><td>${s.student_id}</td><td>${s.last_name}, ${s.first_name} ${s.active ? '' : h`<span class="chip gray">inactive</span>`}</td><td>${s.grade}</td><td>${s.homeroom_teacher || ''}</td>
+        ${students.map((s) => h`<tr><td>${s.student_id}</td><td>${s.last_name}, ${s.first_name} ${s.active ? '' : h`<span class="chip gray">inactive</span>`} ${s.leadership ? h`<span class="chip ok">leader</span>` : ''}</td><td>${s.grade}</td><td>${s.homeroom_teacher || ''}</td>
           <td>${s.has_pin ? h`<span class="chip ok">set</span>` : h`<span class="chip gray">none</span>`}</td>
           <td class="nowrap"><button class="btn small" data-pin="${s.student_id}">New PIN</button> <button class="btn small" data-edit="${s.student_id}">Edit</button></td></tr>`)}</tbody></table></div>`
         : h`<div class="empty"><strong>No students found</strong>${q ? 'Try a different search.' : 'Import the roster above to get started.'}</div>`);
@@ -147,12 +147,13 @@ function editStudent(s, done) {
       <div><label for="s_r">Room</label><input type="text" id="s_r" value="${s.room || ''}" maxlength="20"></div>
     </div>
     <label class="check"><input type="checkbox" id="s_a" ${s.active ? raw('checked') : ''}> Active (shows in lists and can sign in)</label>
+    <label class="check"><input type="checkbox" id="s_lead" ${s.leadership ? raw('checked') : ''}> Student leadership (adds a Store orders tab to their bank page so they can help hand out P5 store orders)</label>
     <div class="row end mt14"><button class="btn" data-x>Cancel</button><button class="btn primary" data-s>Save</button></div><div class="error-text" id="s_err"></div>`);
   $('[data-x]', m.el).addEventListener('click', m.close);
   $('[data-s]', m.el).addEventListener('click', async () => {
     const v = (x) => $(x, m.el).value;
     try {
-      await api('/admin/students/' + s.student_id, { method: 'PATCH', body: { last_name: v('#s_l'), first_name: v('#s_f'), grade: Number(v('#s_g')), homeroom_teacher: v('#s_h') || null, room: v('#s_r') || null, active: $('#s_a', m.el).checked } });
+      await api('/admin/students/' + s.student_id, { method: 'PATCH', body: { last_name: v('#s_l'), first_name: v('#s_f'), grade: Number(v('#s_g')), homeroom_teacher: v('#s_h') || null, room: v('#s_r') || null, active: $('#s_a', m.el).checked, leadership: $('#s_lead', m.el).checked } });
       m.close(); toast('Student updated.'); done();
     } catch (e) { $('#s_err', m.el).textContent = e.message; }
   });

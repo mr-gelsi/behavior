@@ -7,6 +7,7 @@ import { studentHome, studentStore, studentSeat } from './views-student.js';
 import { icon } from './icons.js';
 import { breaksStaff, studentTimer, openBreakModal } from './views-breaks.js';
 import { classesList, classDetail, studentClasses } from './views-classes.js';
+import { studentEquipment, equipmentStaff, studentJobs, studentLeader } from './views-extras.js';
 
 const root = document.getElementById('root');
 
@@ -67,9 +68,9 @@ async function showLogin(message) {
 const STAFF_NAV = [
   ['dashboard', 'dashboard', 'Dashboard'], ['record', 'record', 'Record Steps'], ['reports', 'reports', 'Behavior Reports'],
   ['reward-report', 'gift', 'Reward Day Report'],
-  ['p5', 'star', 'P5 Points'], ['store', 'store', 'Store'], ['rewards', 'ticket', 'Rewards Day'], ['classes', 'classes', 'My Classes'], ['breaks', 'clock', 'Break Tracker'],
+  ['p5', 'star', 'P5 Points'], ['store', 'store', 'Store'], ['rewards', 'ticket', 'Rewards Day'], ['classes', 'classes', 'My Classes'], ['breaks', 'clock', 'Break Tracker'], ['equipment', 'laptop', 'Charger Log'],
 ];
-const STUDENT_NAV = [['me', 'bank', 'My P5'], ['shop', 'store', 'Store'], ['seat', 'ticket', 'Reserve a Seat'], ['classes', 'key', 'My Classes']];
+const STUDENT_NAV = [['me', 'bank', 'My P5'], ['shop', 'store', 'Store'], ['seat', 'ticket', 'Reserve a Seat'], ['classes', 'key', 'My Classes'], ['equipment', 'plug', 'Chargers']];
 
 function defaultNav(me) {
   return me.type === 'staff' ? [...STAFF_NAV, ...(me.user.role === 'admin' ? [['admin', 'admin', 'Admin']] : [])] : STUDENT_NAV;
@@ -207,10 +208,10 @@ function shell() {
 const STAFF_ROUTES = {
   dashboard: (el) => S.dashboard(el), record: (el) => S.record(el), monthly: (el) => S.monthly(el),
   'reward-report': (el) => S.rewardReport(el), p5: (el) => P.p5(el), store: (el) => P.storeStaff(el),
-  rewards: (el) => rewardsStaff(el), classes: (el) => classesList(el), breaks: (el) => breaksStaff(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
+  rewards: (el) => rewardsStaff(el), classes: (el) => classesList(el), breaks: (el) => breaksStaff(el), equipment: (el) => equipmentStaff(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
   password: (el) => passwordPage(el),
 };
-const STUDENT_ROUTES = { me: studentHome, shop: studentStore, seat: studentSeat, classes: studentClasses, timer: studentTimer };
+const STUDENT_ROUTES = { me: studentHome, shop: studentStore, seat: studentSeat, classes: studentClasses, equipment: studentEquipment, leader: studentLeader, timer: studentTimer };
 
 async function route() {
   if (!state.me) return;
@@ -231,10 +232,13 @@ async function route() {
       else if (cd) await classDetail(page, Number(cd[1]));
       else if (STAFF_ROUTES[path] && !(path === 'admin' && state.me.user.role !== 'admin') && !(path === 'pin-sheet' && state.me.user.role !== 'admin')) await STAFF_ROUTES[path](page);
       else location.hash = '#/dashboard';
-    } else if (STUDENT_ROUTES[path]) {
+    } else if (/^jobs\/\d+$/.test(path) || STUDENT_ROUTES[path]) {
       // A student who is out of class always lands on the timer until they are back.
       if (path !== 'timer' && (await api('/student/break')).active) { location.hash = '#/timer'; return; }
-      await STUDENT_ROUTES[path](page);
+      const jb = /^jobs\/(\d+)$/.exec(path);
+      if (jb) await studentJobs(page, Number(jb[1]));
+      else if (path === 'leader' && !state.me.student.leadership) location.hash = '#/me';
+      else await STUDENT_ROUTES[path](page);
     }
     else location.hash = '#/me';
     window.scrollTo(0, 0);

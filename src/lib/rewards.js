@@ -1,3 +1,4 @@
+import { runPayroll } from './payroll.js';
 // Rewards Day engine: qualification, booking, auto-assignment, reconciliation.
 import { all, one, run, st, batch, chunked, audit, getSettings } from './db.js';
 import { bad, fmtMD, todayStr } from './util.js';
@@ -239,6 +240,7 @@ export async function lockDay(env, day, actor) {
 export async function runScheduled(env) {
   await cleanup(env);
   await closeStaleBreaks(env);
+  await runPayroll(env);
   const now = new Date().toISOString();
   const today = todayStr(env);
   const due = await all(env,

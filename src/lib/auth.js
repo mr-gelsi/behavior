@@ -42,7 +42,7 @@ export async function loadSession(request, env) {
     return user ? { type: 'staff', hash, user } : null;
   }
   const student = await one(env,
-    'SELECT student_id, first_name, last_name, grade, homeroom_teacher, room FROM students WHERE student_id = ? AND active = 1',
+    'SELECT student_id, first_name, last_name, grade, homeroom_teacher, room, leadership FROM students WHERE student_id = ? AND active = 1',
     Number(s.user_ref));
   return student ? { type: 'student', hash, student } : null;
 }

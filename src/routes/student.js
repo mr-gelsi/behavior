@@ -41,6 +41,10 @@ add('GET', '/api/student/home', 'student', async ({ env, student }) => {
     trophies: await trophiesFor(env, id, today),
     badges: await badgesFor(env, id, today),
     breaks: await breakCounts(env, id, today, period),
+    jobs: await all(env,
+      `SELECT j.title, j.salary, c.id AS class_id, c.name AS class_name, a.hired_on
+         FROM job_applications a JOIN class_jobs j ON j.id = a.job_id JOIN classes c ON c.id = a.class_id
+        WHERE a.student_id = ? AND a.status = 'hired' AND c.archived = 0 ORDER BY c.period, c.name`, id),
     on_break: !!(await one(env, "SELECT 1 AS x FROM break_log WHERE student_id = ? AND status = 'out'", id)),
     ledger: await all(env,
       `SELECT p.id, p.type, p.amount, p.note, p.tx_date, c.name AS category, c.emoji

@@ -14,6 +14,9 @@ import './routes/classes.js';
 import './routes/prefs.js';
 import './routes/breaks.js';
 import './routes/calendar.js';
+import './routes/equipment.js';
+import './routes/jobs.js';
+import './routes/leader.js';
 import './routes/admin.js';
 
 const CSP = [

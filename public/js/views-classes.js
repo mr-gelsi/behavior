@@ -1,8 +1,10 @@
 import {
   state, api, h, raw, mount, $, $$, toast, fail, modal, confirmBox, studentPicker, loadCategories, fmtDate, lastFirst, downloadCsv, fmtMD,
 } from './core.js';
+import { icon } from './icons.js';
 import { randomInt, targetRotation, sliceAtPointer, TAU } from './spinner-core.js';
 import { itemForm } from './views-p5.js';
+import { jobsTab } from './views-extras.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
 
@@ -106,7 +108,7 @@ export async function classDetail(el, id) {
     <div class="card no-print"><div class="row">
       <div class="code-box big"><span class="code">${c.code}</span><button class="btn small" id="copy">Copy</button></div>
       <div class="muted grow-220">Students sign in, open <strong>My Classes</strong>, and type this code. <span class="chip ${c.join_open && !c.archived ? 'ok' : 'gray'}">${c.join_open && !c.archived ? 'Joining open' : 'Joining closed'}</span></div></div></div>
-    <div class="tabs no-print" role="tablist">${[['seating', 'Seating chart'], ['students', 'Students'], ['spinner', 'Name spinner'], ['rewards', 'Rewards'], ['report', 'Report'], ['settings', 'Settings']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
+    <div class="tabs no-print" role="tablist">${[['seating', 'Seating chart'], ['students', 'Students'], ['spinner', 'Name spinner'], ['rewards', 'Rewards'], ['jobs', 'Jobs'], ['report', 'Report'], ['settings', 'Settings']].map(([k, l]) => h`<button role="tab" data-t="${k}" aria-selected="${tab === k}">${l}</button>`)}</div>
     <div id="tab"></div>`);
   $('#copy', el).addEventListener('click', () => copyText(c.code));
   $$('.tabs button', el).forEach((b) => b.addEventListener('click', async () => {
@@ -118,6 +120,7 @@ export async function classDetail(el, id) {
   else if (tab === 'students') await studentsTab(box, d, reload);
   else if (tab === 'spinner') spinnerTab(box, d);
   else if (tab === 'rewards') await rewardsTab(box, d, reload);
+  else if (tab === 'jobs') await jobsTab(box, d, reload);
   else if (tab === 'report') await reportTab(box, d);
   else settingsTab(box, d, reload);
 }
@@ -902,7 +905,7 @@ export async function studentClasses(el) {
       <button class="btn primary" id="jgo">Join class</button><div class="error-text" id="jerr" role="alert"></div></div>
     <div class="card"><h2>Classes you\u2019ve joined</h2>
       ${classes.length ? h`<div class="table-wrap"><table><thead><tr><th>Class</th><th>Period</th><th>Teacher</th><th></th></tr></thead><tbody>
-        ${classes.map((c) => h`<tr><td><strong>${c.name}</strong></td><td>${c.period || ''}</td><td>${c.teacher}</td><td><button class="btn small danger" data-leave="${c.id}">Leave</button></td></tr>`)}</tbody></table></div>`
+        ${classes.map((c) => h`<tr><td><strong>${c.name}</strong></td><td>${c.period || ''}</td><td>${c.teacher}</td><td class="nowrap"><a class="btn small" href="#/jobs/${c.id}">${icon('briefcase', 16)} Jobs</a> <button class="btn small danger" data-leave="${c.id}">Leave</button></td></tr>`)}</tbody></table></div>`
         : h`<div class="empty"><strong>You haven\u2019t joined a class yet</strong>Ask your teacher for the class code.</div>`}</div>`);
   const input = $('#jc', el);
   const go = async () => {

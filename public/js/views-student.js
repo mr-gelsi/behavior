@@ -2,6 +2,7 @@ import { state, api, h, raw, mount, $, $$, toast, fail, confirmBox, fmtMD, fmtDa
 
 import { icon, trophy, medal } from './icons.js';
 import { openBreakModal } from './views-breaks.js';
+import { leaderTabs } from './views-extras.js';
 
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
 const TYPE_LABEL = { award: 'Earned', fine: 'Fine', purchase: 'Store', refund: 'Refund', seat: 'Rewards Day seat', seat_refund: 'Seat refund', adjustment: 'Adjustment' };
@@ -36,6 +37,7 @@ export async function studentHome(el) {
   const fineTotal = d.fines.reduce((a, x) => a - x.amount, 0);
   let open = null; // which panel is showing: 'bonus' | 'fines' | null
   mount(el, h`
+    ${state.me.student.leadership ? leaderTabs('me') : ''}
     <div class="page-head"><div><h1>Hi, ${d.student.first_name}!</h1><p class="muted">Your P5 tickets: Prompt, Prepared, Positive, Polite, Productive</p></div>
       <div class="actions"><a class="btn primary" href="#/shop">${icon('store', 18)} Visit the store</a><a class="btn" href="#/seat">${icon('ticket', 18)} Reserve a seat</a></div></div>
 
@@ -58,6 +60,10 @@ export async function studentHome(el) {
       <button type="button" class="bank-btn" data-p="fines" aria-expanded="false">${icon('alert', 26)}<span class="bb-text"><strong>Fines &amp; steps</strong><span>${per ? per.name : 'This rewards period'} \u00b7 ${d.steps.length} step${d.steps.length === 1 ? '' : 's'}</span></span><span class="bb-amt neg">${fineTotal ? '\u2212' + nf(fineTotal) : '0'}</span></button>
     </div>
     <div id="bankpanel"></div>
+
+    ${d.jobs.length ? h`<div class="card mt16"><h2>${icon('briefcase', 20)} <span class="ml6">My class jobs</span></h2>
+      <div class="table-wrap"><table><thead><tr><th>Job</th><th>Class</th><th class="num">Paid every Friday</th></tr></thead><tbody>
+      ${d.jobs.map((j) => h`<tr><td><strong>${j.title}</strong></td><td>${j.class_name}</td><td class="num pos">+${j.salary}</td></tr>`)}</tbody></table></div></div>` : ''}
 
     <div class="card mt16"><h2>${icon('star', 20)} <span class="ml6">Trophies &amp; badges</span></h2>
       ${trophyShelf(d)}

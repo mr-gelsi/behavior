@@ -47,7 +47,7 @@ You need a free **GitHub** account and a **Cloudflare** account. Turn on two-fac
 
 ### Step 2: Create the database
 
-> Run **all five** files in `migrations/` (`0001` to `0005`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
+> Run **all five** files in `migrations/` (`0001` to `0010`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
 
 1. In the Cloudflare dashboard, open **Storage & databases → D1** and click **Create database**. Name it exactly `behavior-tracker`.
 2. Copy its **Database ID**.
@@ -188,7 +188,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 427 automated checks
+npm test                           # 498 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.
@@ -223,3 +223,13 @@ There is also a demo server with **fake** students for trying every screen: `nod
 - **Trophies are per grade:** a student is ranked only against students in the same grade (top 10% gold, 11-20% silver, 21-30% bronze).
 - **School calendar (Admin > School calendar):** upload a CSV (date, end_date, label, type) or add days one at a time. Days off (holidays, breaks, teacher days) and extra school days are stored per school year. Weekends are always skipped; with no calendar loaded, every weekday counts. Run `migrations/0009_school_calendar.sql` once (console copy: `0009_school_calendar_console.sql`).
 - **Both badges count school days:** "school days without a step" and "school days in class" (no restroom/water break) use the calendar. Today is never counted until it is over.
+
+## New: charger log, class jobs, student leadership
+
+**One more migration:** run `migrations/0010_equipment_jobs_leadership.sql` once (Cloudflare console copy: `0010_equipment_jobs_leadership_console.sql`). The full set is now `0001` to `0010`.
+
+- **Chargers (students):** the new **Chargers** menu item lets a student borrow a *charger* or a *computer*. They pick the item and a teacher types their 4-digit PIN to approve it (the same PIN teachers set on the Break Tracker page). The server records the date, time and which teacher approved. The student returns it by typing their own student number. Students see their own history with teacher last names only.
+- **Charger Log (staff):** every check-out, who is still holding something (with a "Mark returned" button), totals, by-student and every-check-out views, filters, and CSV download.
+- **Class jobs:** on any class, open the new **Jobs** tab. Add jobs (pick a preset such as Tech Helper or Materials Manager, or write your own), set the weekly salary in P5 tickets and the number of openings. Students open **My Classes** and press **Jobs** next to a class, then apply and explain why they'd be good for it. You see each application and press **Hire** or **Decline**, and **End job** later. A student can hold one job per class.
+- **Automatic pay:** every Friday the hourly background job pays each hired student their job's current salary as a P5 award (ledger note "Class job pay: Tech Helper (Period 2)"). If the school calendar marks that Friday as a day off, the last school day of that week is pay day. Nobody is paid twice for the same week, a missed week is caught up, and a student is paid only while they still hold the job in a class they are still in. Admins can also run it by hand with `POST /api/admin/payroll/run` (optional `as_of` date).
+- **Student leadership:** in **Admin > Roster > Edit** tick **Student leadership**. That student gets a **Store orders** tab next to **My bank**, listing pending School Store orders (not teachers' own custom rewards) with a **Mark handed out** button. Leaders never see prices or balances, cannot cancel or refund, and cannot hand out their own order. Untick the box and access ends immediately.

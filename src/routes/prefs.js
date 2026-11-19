@@ -3,8 +3,8 @@ import { add } from '../router.js';
 import { one, run } from '../lib/db.js';
 import { bad } from '../lib/util.js';
 
-const STAFF_PATHS = ['dashboard', 'record', 'reports', 'reward-report', 'p5', 'store', 'rewards', 'classes', 'breaks'];
-const STUDENT_PATHS = ['me', 'shop', 'seat', 'classes'];
+const STAFF_PATHS = ['dashboard', 'record', 'reports', 'reward-report', 'p5', 'store', 'rewards', 'classes', 'breaks', 'equipment'];
+const STUDENT_PATHS = ['me', 'shop', 'seat', 'classes', 'equipment'];
 
 const allowedPaths = (session) =>
   session.type === 'student' ? STUDENT_PATHS : [...STAFF_PATHS, ...(session.user.role === 'admin' ? ['admin'] : [])];

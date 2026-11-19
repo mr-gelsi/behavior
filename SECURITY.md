@@ -66,3 +66,9 @@ If you think a PIN, password, export, or either secret has been exposed: reset t
 ## Student passwords
 
 Student passwords are stored with the same slow, salted, secret-keyed hash as staff passwords (never as text). Wrong guesses count toward the same 5-per-15-minutes lock as PINs. Setting a password signs the student out everywhere and switches off their PIN.
+
+## Charger log, class jobs, student leaders
+
+- Charger check-outs use the same teacher PINs and the same protections as the break tracker (5 wrong tries per student and 40 per network address in 15 minutes; separate counters so one cannot lock the other). Times and the approving teacher are written by the server.
+- Class jobs: only the class owner (or an Admin) can post jobs and hire. A student can only see and apply to jobs in a class they have joined. Pay runs on the server only; each (hire, week) pays once, enforced by the database.
+- Student leaders can see and fulfil School Store orders and nothing else. Only an Admin can grant the checkbox, and the server checks it on every request.
