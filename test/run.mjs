@@ -879,6 +879,123 @@ ok(!r.data.orders.some((o) => o.item === 'Extra recess token'), "one teacher's r
 ok(db.db.prepare("SELECT COUNT(*) c FROM audit_log WHERE action='class.report'").get().c >= 5, 'opening a report is recorded in the audit log');
 
 // ------------------------------------------------------------------------------------
+section('Restroom and water breaks');
+r = await call(teacher, 'GET', '/api/breaks/pin');
+ok(r.data.has_pin === false, 'a teacher starts with no break PIN');
+for (const bad of ['123', '12345', 'abcd', '12a4', '']) {
+  r = await call(teacher, 'PUT', '/api/breaks/pin', { pin: bad });
+  ok(r.status === 400, `PIN "${bad}" is refused (must be exactly 4 digits)`);
+}
+r = await call(teacher, 'PUT', '/api/breaks/pin', { pin: '4821' });
+ok(r.data.ok, 'teacher sets a 4-digit PIN');
+ok(!db.db.prepare('SELECT pin_hash FROM teacher_pins').all().some((x) => x.pin_hash.includes('4821')), 'the teacher PIN is stored hashed, not as digits');
+r = await call(teacher2, 'PUT', '/api/breaks/pin', { pin: '4821' });
+ok(r.status === 409, 'two teachers cannot share a PIN');
+r = await call(teacher2, 'PUT', '/api/breaks/pin', { pin: '7350' });
+ok(r.data.ok, 'a second teacher sets a different PIN');
+r = await call(teacher, 'PUT', '/api/breaks/pin', { pin: '4821' });
+ok(r.data.ok, 'a teacher can re-save their own PIN');
+r = await call(s1002, 'PUT', '/api/breaks/pin', { pin: '1111' });
+ok(r.status === 403, 'students cannot set teacher PINs');
+r = await call(s1002, 'GET', '/api/breaks/report');
+ok(r.status === 403, 'students cannot open the break report');
+
+const bStu = await login({ kind: 'student', student_id: '1002', pin: pins[1002] });
+r = await call(bStu, 'GET', '/api/student/break');
+ok(r.data.active === null, 'no break is active at first');
+r = await call(bStu, 'POST', '/api/student/break/start', { reason: 'snack', pin: '4821' });
+ok(r.status === 400, 'only restroom or water are valid reasons');
+r = await call(bStu, 'POST', '/api/student/break/start', { reason: 'restroom', pin: '0000' });
+ok(r.status === 403 && !/Tess|Teacher/.test(JSON.stringify(r.data)), 'a wrong teacher PIN is refused without hinting at the teacher');
+ok(db.db.prepare('SELECT COUNT(*) c FROM break_log').get().c === 0, 'a wrong PIN logs no break');
+for (let i = 0; i < 4; i++) await call(bStu, 'POST', '/api/student/break/start', { reason: 'water', pin: '9999' });
+r = await call(bStu, 'POST', '/api/student/break/start', { reason: 'restroom', pin: '4821' });
+ok(r.status === 429, 'after 5 wrong PINs the student is locked out (even with a correct PIN)');
+db.db.exec("DELETE FROM login_attempts");
+const startedAt = Date.now();
+r = await call(bStu, 'POST', '/api/student/break/start', { reason: 'restroom', pin: '4821' });
+ok(r.data.ok && r.data.active && r.data.active.reason === 'restroom', 'a correct PIN starts the break');
+const brow = db.db.prepare('SELECT * FROM break_log').get();
+ok(Math.abs(Date.parse(brow.left_at) - startedAt) < 5000 && brow.status === 'out', 'the leave time is stamped by the server');
+ok(brow.released_by === db.db.prepare("SELECT id FROM users WHERE email='teach@school.org'").get().id, 'the break records which teacher released the student');
+r = await call(bStu, 'POST', '/api/student/break/start', { reason: 'water', pin: '4821' });
+ok(r.status === 400, 'a student who is already out cannot start a second break');
+r = await call(bStu, 'GET', '/api/student/break');
+ok(r.data.active && r.data.active.id === brow.id && typeof r.data.server_now === 'string', 'the timer page can read the active break and the server clock');
+r = await call(bStu, 'GET', '/api/student/home');
+ok(r.data.on_break === true, 'the student home knows the student is out');
+
+r = await call(bStu, 'POST', '/api/student/break/return', { student_number: '1003' });
+ok(r.status === 400, "someone else's student number does not stop the timer");
+ok(db.db.prepare('SELECT status FROM break_log').get().status === 'out', 'a wrong student number leaves the student marked as out');
+r = await call(bStu, 'POST', '/api/student/break/return', { student_number: '' });
+ok(r.status === 400, 'an empty student number is refused');
+const bOther = await login({ kind: 'student', student_id: '1003', pin: pins[1003] });
+r = await call(bOther, 'POST', '/api/student/break/return', { student_number: '1003' });
+ok(r.status === 400, "one student cannot stop another student's timer");
+db.db.prepare("UPDATE break_log SET left_at = ? WHERE id = ?").run(new Date(Date.now() - 125000).toISOString(), brow.id);
+r = await call(bStu, 'POST', '/api/student/break/return', { student_number: '1002' });
+ok(r.data.ok && r.data.last.seconds >= 124 && r.data.last.seconds <= 130, 'the right student number stops the timer and returns the minutes out', r.data);
+r = await call(bStu, 'POST', '/api/student/break/return', { student_number: '1002' });
+ok(r.status === 400, 'a finished break cannot be stopped twice');
+const done = db.db.prepare('SELECT * FROM break_log').get();
+ok(done.status === 'returned' && done.return_method === 'student' && done.returned_at, 'the return is stored with how it was stopped');
+
+r = await call(bOther, 'POST', '/api/student/break/start', { reason: 'water', pin: '7350' });
+ok(r.data.ok, 'another student leaves for water with the second teacher’s PIN');
+db.db.exec("UPDATE users SET active = 0 WHERE email = 'teach@school.org'");
+r = await call(bStu, 'POST', '/api/student/break/start', { reason: 'water', pin: '4821' });
+ok(r.status === 403, 'a deactivated teacher’s PIN stops working');
+db.db.exec("UPDATE users SET active = 1 WHERE email = 'teach@school.org'");
+
+r = await call(bStu, 'GET', '/api/student/home');
+ok(r.data.breaks.year.total === 1 && r.data.breaks.year.restroom === 1 && r.data.breaks.year.water === 0, 'the student sees their own restroom and water counts');
+ok(r.data.breaks.today === 1, 'the student sees how many breaks they took today');
+
+r = await call(teacher, 'GET', '/api/breaks/report');
+ok(r.status === 200 && r.data.totals.breaks === 2 && r.data.totals.restroom === 1 && r.data.totals.water === 1, 'the break report counts restroom and water breaks');
+ok(r.data.out_now.length === 1 && r.data.out_now[0].student_id === 1003, 'the report lists who is out right now');
+const row2002 = r.data.students.find((x) => x.student_id === 1002);
+ok(row2002 && row2002.breaks === 1 && row2002.seconds >= 124, 'the report shows each student’s breaks and time out');
+const lg = r.data.log.find((x) => x.student_id === 1002);
+ok(lg && lg.released_by === 'Tess Teacher' && lg.seconds >= 124 && lg.left_at && lg.returned_at, 'the report shows when they left, when they returned, how long and who released them');
+r = await call(teacher, 'GET', '/api/breaks/report?reason=water');
+ok(r.data.totals.breaks === 1, 'the report can filter by reason');
+r = await call(teacher, 'GET', '/api/breaks/report?from=2026-13-40');
+ok(r.status === 400, 'the report rejects a bad date');
+r = await call(teacher, 'GET', '/api/breaks/report?grade=5');
+ok(r.status === 400, 'the report rejects a bad grade');
+const openId = db.db.prepare("SELECT id FROM break_log WHERE status='out'").get().id;
+r = await call(teacher, 'POST', `/api/breaks/${openId}/return`);
+ok(r.data.ok, 'a teacher can mark a forgotten student as back');
+r = await call(teacher, 'POST', `/api/breaks/${openId}/return`);
+ok(r.status === 400, 'a break cannot be closed twice');
+await call(bOther, 'POST', '/api/student/break/start', { reason: 'water', pin: '7350' });
+db.db.prepare("UPDATE break_log SET left_at = ? WHERE status='out'").run(new Date(Date.now() - 4 * 3600 * 1000).toISOString());
+await runScheduled(env);
+ok(db.db.prepare("SELECT COUNT(*) c FROM break_log WHERE status='out'").get().c === 0, 'the hourly job closes a break left open for hours');
+ok(db.db.prepare("SELECT return_method FROM break_log ORDER BY id DESC LIMIT 1").get().return_method === 'auto', 'an auto-closed break is labelled as auto-closed');
+
+r = await call(admin, 'GET', '/api/breaks/pins');
+ok(r.data.teachers.some((t) => t.has_pin) && !JSON.stringify(r.data).match(/4821|pin_hash/), 'the admin sees who has a PIN but never the PIN itself');
+r = await call(teacher, 'GET', '/api/breaks/pins');
+ok(r.status === 403, 'teachers cannot list bOther teachers’ PIN status');
+r = await call(admin, 'DELETE', `/api/breaks/pins/${db.db.prepare("SELECT user_id FROM teacher_pins ORDER BY user_id DESC LIMIT 1").get().user_id}`);
+ok(r.data.ok, 'an admin can reset a teacher’s PIN');
+r = await call(teacher, 'DELETE', '/api/breaks/pin');
+ok(r.data.ok && (await call(teacher, 'GET', '/api/breaks/pin')).data.has_pin === false, 'a teacher can remove their own PIN');
+
+section('Student bank page data');
+r = await call(s1002, 'GET', '/api/student/home');
+const h2 = r.data;
+ok(h2.student.student_id === 1002 && typeof h2.balance === 'number', 'the bank page has the account number and balance');
+ok(h2.earned - h2.spent - h2.fines_total === h2.balance, 'earned minus spent minus fines equals the balance', { e: h2.earned, s: h2.spent, f: h2.fines_total, b: h2.balance });
+ok(h2.earned >= 0 && h2.spent >= 0 && h2.fines_total >= 0, 'the bank totals are never negative');
+ok(h2.period && h2.period.name, 'the bank page knows the current rewards period');
+ok(Array.isArray(h2.bonuses) && Array.isArray(h2.fines) && Array.isArray(h2.steps), 'bonuses, fines and steps for the period are lists');
+ok(!JSON.stringify(h2).match(/pin_hash|notes/), 'the student bank page leaks no PIN hashes or private step notes');
+
+// ------------------------------------------------------------------------------------
 section('Export and audit');
 r = await call(admin, 'GET', '/api/admin/export?table=students');
 ok(typeof r.data === 'string' && r.data.startsWith('student_id,') && !/pin_hash|hmac\$/.test(r.data), 'student export never includes PIN hashes');

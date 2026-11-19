@@ -12,6 +12,7 @@ import './routes/rewards.js';
 import './routes/student.js';
 import './routes/classes.js';
 import './routes/prefs.js';
+import './routes/breaks.js';
 import './routes/admin.js';
 
 const CSP = [

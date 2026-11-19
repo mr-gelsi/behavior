@@ -116,3 +116,9 @@ export function randomCode(len = 6) {
   }
   return out;
 }
+
+// Teacher break PINs (4 digits). Deterministic keyed hash so a PIN can identify the teacher and stay unique;
+// without the secret PEPPER the stored values cannot be reversed by trying all 10,000 PINs.
+export async function hashTeacherPin(pin, env) {
+  return toB64(await hmac(needPepper(env), `teacher-pin:${pin}`));
+}

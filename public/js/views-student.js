@@ -1,21 +1,85 @@
 import { state, api, h, raw, mount, $, $$, toast, fail, confirmBox, fmtMD, fmtDate, fmtDT, pct } from './core.js';
 
+import { icon } from './icons.js';
+import { openBreakModal } from './views-breaks.js';
+
 const loading = (el) => mount(el, h`<div class="spinner">Loading\u2026</div>`);
 const TYPE_LABEL = { award: 'Earned', fine: 'Fine', purchase: 'Store', refund: 'Refund', seat: 'Rewards Day seat', seat_refund: 'Seat refund', adjustment: 'Adjustment' };
+
+const nf = (n) => Number(n).toLocaleString();
 
 export async function studentHome(el) {
   loading(el);
   const d = await api('/student/home');
+  const per = d.period;
+  const bonusTotal = d.bonuses.reduce((a, x) => a + x.amount, 0);
+  const fineTotal = d.fines.reduce((a, x) => a - x.amount, 0);
+  let open = null; // which panel is showing: 'bonus' | 'fines' | null
   mount(el, h`
-    <h1>Hi, ${d.student.first_name}! \ud83d\udc4b</h1>
-    <p class="muted">Your P5 points: Prompt, Prepared, Positive, Polite, Productive</p>
-    <div class="card"><div class="muted">Your balance</div><div class="balance-hero"><span class="big">${d.balance}</span><span class="muted">P5 points</span></div>
-      <div class="pills mt14"><a class="pill-btn primary" href="#/shop">Visit the store</a><a class="pill-btn" href="#/seat">Reserve a Rewards Day seat</a></div></div>
-    <div class="card"><h2>Your recent points</h2>
-      ${d.ledger.length ? h`<div class="table-wrap"><table><thead><tr><th>Date</th><th>What</th><th>For</th><th class="num">Points</th><th>Note</th></tr></thead><tbody>
-        ${d.ledger.map((x) => h`<tr><td class="nowrap">${fmtMD(x.tx_date)}</td><td>${TYPE_LABEL[x.type] || x.type}</td><td>${x.category ? `${x.emoji || ''} ${x.category}` : ''}</td>
-          <td class="num ${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${x.amount}</td><td>${x.note || ''}</td></tr>`)}</tbody></table></div>`
-        : h`<div class="empty"><strong>No points yet</strong>Teachers award P5 points when you\u2019re prompt, prepared, positive, polite, or productive.</div>`}</div>`);
+    <div class="page-head"><div><h1>Hi, ${d.student.first_name}!</h1><p class="muted">Your P5 tickets: Prompt, Prepared, Positive, Polite, Productive</p></div>
+      <div class="actions"><a class="btn primary" href="#/shop">${icon('store', 18)} Visit the store</a><a class="btn" href="#/seat">${icon('ticket', 18)} Reserve a seat</a></div></div>
+
+    <div class="bank-top">
+      <div class="bank-card" aria-label="P5 ticket account">
+        <div class="bc-head"><span class="bc-chip">${icon('chip', 34)}</span><span class="bc-brand">P5 TICKETS</span></div>
+        <div class="bc-label">Available balance</div>
+        <div class="bc-balance"><span>${nf(d.balance)}</span><small>tickets</small></div>
+        <div class="bc-acct"><span>ACCT</span><strong>${d.student.student_id}</strong></div>
+        <div class="bc-name">${d.student.first_name} ${d.student.last_name}</div>
+      </div>
+      <div class="bank-stats">
+        <div class="stat"><div class="stat-label">${icon('up', 16)} Total tickets \u00b7 all time</div><div class="stat-num">${nf(d.earned)}</div><div class="stat-sub">earned since you started</div></div>
+        <div class="stat"><div class="stat-label">${icon('down', 16)} Total spent \u00b7 all time</div><div class="stat-num">${nf(d.spent)}</div><div class="stat-sub">store items and Rewards Day seats</div></div>
+      </div>
+    </div>
+
+    <div class="bank-actions">
+      <button type="button" class="bank-btn" data-p="bonus" aria-expanded="false">${icon('gift', 26)}<span class="bb-text"><strong>Bonuses</strong><span>${per ? per.name : 'This rewards period'} \u00b7 ${d.bonuses.length} earned</span></span><span class="bb-amt pos">+${nf(bonusTotal)}</span></button>
+      <button type="button" class="bank-btn" data-p="fines" aria-expanded="false">${icon('alert', 26)}<span class="bb-text"><strong>Fines &amp; steps</strong><span>${per ? per.name : 'This rewards period'} \u00b7 ${d.steps.length} step${d.steps.length === 1 ? '' : 's'}</span></span><span class="bb-amt neg">${fineTotal ? '\u2212' + nf(fineTotal) : '0'}</span></button>
+    </div>
+    <div id="bankpanel"></div>
+
+    <div class="grid-2 mt16">
+      <div class="card"><h2>${icon('drop', 20)} <span class="ml6">Restroom &amp; water breaks</span></h2>
+        <div class="break-tiles">
+          <div class="mini"><div class="mini-num">${d.breaks.year.restroom}</div><div class="mini-label">Restroom this year</div></div>
+          <div class="mini"><div class="mini-num">${d.breaks.year.water}</div><div class="mini-label">Water this year</div></div>
+          <div class="mini"><div class="mini-num">${d.breaks.today}</div><div class="mini-label">Today</div></div>
+        </div>
+        ${d.breaks.period ? h`<p class="muted small mt8">${per.name}: ${d.breaks.period.restroom} restroom, ${d.breaks.period.water} water</p>` : ''}
+        <button type="button" class="btn mt12" id="leave">${icon('drop', 18)} Restroom / Water</button></div>
+      <div class="card"><h2>${icon('bank', 20)} <span class="ml6">Recent activity</span></h2>
+        ${d.ledger.length ? h`<div class="table-wrap"><table><thead><tr><th>Date</th><th>What</th><th class="num">Tickets</th></tr></thead><tbody>
+          ${d.ledger.slice(0, 8).map((x) => h`<tr><td class="nowrap">${fmtMD(x.tx_date)}</td><td>${TYPE_LABEL[x.type] || x.type}${x.category ? ` \u00b7 ${x.emoji || ''} ${x.category}` : ''}${x.note ? h`<div class="muted small">${x.note}</div>` : ''}</td>
+            <td class="num ${x.amount > 0 ? 'pos' : 'neg'}">${x.amount > 0 ? '+' : ''}${x.amount}</td></tr>`)}</tbody></table></div>`
+          : h`<div class="empty"><strong>No tickets yet</strong>Teachers award P5 tickets when you\u2019re prompt, prepared, positive, polite, or productive.</div>`}</div>
+    </div>`);
+
+  const panel = $('#bankpanel', el);
+  const drawPanel = () => {
+    $$('.bank-btn', el).forEach((b) => { const on = b.dataset.p === open; b.setAttribute('aria-expanded', String(on)); b.classList.toggle('on', on); });
+    if (!open) { mount(panel, h``); return; }
+    const when = per ? `${fmtDate(per.start_date)} \u2013 ${fmtDate(per.end_date)}` : '';
+    if (open === 'bonus') {
+      mount(panel, h`<div class="card mt12"><h2>Bonuses \u00b7 ${per ? per.name : ''}</h2><p class="muted small">${when}</p>
+        ${d.bonuses.length ? h`<div class="table-wrap"><table><thead><tr><th>Date</th><th>For</th><th>Note</th><th class="num">Tickets</th></tr></thead><tbody>
+          ${d.bonuses.map((x) => h`<tr><td class="nowrap">${fmtMD(x.tx_date)}</td><td>${x.category ? `${x.emoji || ''} ${x.category}` : ''}</td><td>${x.note || ''}</td><td class="num pos">+${x.amount}</td></tr>`)}
+          <tr class="totals"><td colspan="3">Total</td><td class="num">+${bonusTotal}</td></tr></tbody></table></div>`
+          : h`<div class="empty"><strong>No bonuses yet this period</strong>Keep being prompt, prepared, positive, polite, and productive.</div>`}</div>`);
+    } else {
+      mount(panel, h`<div class="card mt12"><h2>Fines &amp; steps \u00b7 ${per ? per.name : ''}</h2><p class="muted small">${when}</p>
+        <h3>Fines</h3>
+        ${d.fines.length ? h`<div class="table-wrap"><table><thead><tr><th>Date</th><th>For</th><th>Note</th><th class="num">Tickets</th></tr></thead><tbody>
+          ${d.fines.map((x) => h`<tr><td class="nowrap">${fmtMD(x.tx_date)}</td><td>${x.category ? `${x.emoji || ''} ${x.category}` : ''}</td><td>${x.note || ''}</td><td class="num neg">${x.amount}</td></tr>`)}</tbody></table></div>`
+          : h`<p class="muted">No fines this period.</p>`}
+        <h3 class="mt16">Steps</h3>
+        ${d.steps.length ? h`<div class="table-wrap"><table><thead><tr><th>Date</th><th>Step</th><th>Teacher</th></tr></thead><tbody>
+          ${d.steps.map((x) => h`<tr><td class="nowrap">${fmtMD(x.step_date)}</td><td><span class="chip step">Step ${x.step_level}</span></td><td>${x.teacher || ''}</td></tr>`)}</tbody></table></div>`
+          : h`<p class="muted">No steps this period. Nice work!</p>`}</div>`);
+    }
+  };
+  $$('.bank-btn', el).forEach((b) => b.addEventListener('click', () => { open = open === b.dataset.p ? null : b.dataset.p; drawPanel(); if (open) panel.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); }));
+  $('#leave', el).addEventListener('click', () => openBreakModal());
 }
 
 export async function studentStore(el) {

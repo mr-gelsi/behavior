@@ -4,15 +4,46 @@ import { all, one, st, batch, audit, balanceOf } from '../lib/db.js';
 import { V, bad, todayStr } from '../lib/util.js';
 import { cancelOrder } from './store.js';
 import { availableSql } from '../lib/store.js';
+import { breakCounts } from '../lib/breaks.js';
 
-add('GET', '/api/student/home', 'student', async ({ env, student }) => ({
-  student: { first_name: student.first_name, last_name: student.last_name, grade: student.grade },
-  balance: await balanceOf(env, student.student_id),
-  ledger: await all(env,
-    `SELECT p.id, p.type, p.amount, p.note, p.tx_date, c.name AS category, c.emoji
-       FROM p5_transactions p LEFT JOIN p5_categories c ON c.id = p.category_id
-      WHERE p.student_id = ? ORDER BY p.id DESC LIMIT 50`, student.student_id),
-}));
+add('GET', '/api/student/home', 'student', async ({ env, student }) => {
+  const id = student.student_id;
+  const today = todayStr(env);
+  const period = (await one(env, 'SELECT id, name, start_date, end_date FROM reward_periods WHERE ? BETWEEN start_date AND end_date ORDER BY start_date DESC LIMIT 1', today))
+    || (await one(env, 'SELECT id, name, start_date, end_date FROM reward_periods WHERE start_date <= ? ORDER BY start_date DESC LIMIT 1', today));
+  const t = await one(env,
+    `SELECT COALESCE(SUM(CASE WHEN type = 'award' OR (type = 'adjustment' AND amount > 0) THEN amount END), 0) AS earned,
+            COALESCE(-SUM(CASE WHEN type IN ('purchase','refund','seat','seat_refund') THEN amount END), 0) AS spent,
+            COALESCE(-SUM(CASE WHEN type = 'fine' OR (type = 'adjustment' AND amount < 0) THEN amount END), 0) AS fines,
+            COALESCE(SUM(amount), 0) AS balance
+       FROM p5_transactions WHERE student_id = ?`, id);
+  let bonuses = [], fines = [], steps = [];
+  if (period) {
+    bonuses = await all(env,
+      `SELECT p.id, p.amount, p.note, p.tx_date, c.name AS category, c.emoji
+         FROM p5_transactions p LEFT JOIN p5_categories c ON c.id = p.category_id
+        WHERE p.student_id = ? AND p.type = 'award' AND p.tx_date BETWEEN ? AND ? ORDER BY p.id DESC LIMIT 200`, id, period.start_date, period.end_date);
+    fines = await all(env,
+      `SELECT p.id, p.amount, p.note, p.tx_date, c.name AS category, c.emoji
+         FROM p5_transactions p LEFT JOIN p5_categories c ON c.id = p.category_id
+        WHERE p.student_id = ? AND p.type = 'fine' AND p.tx_date BETWEEN ? AND ? ORDER BY p.id DESC LIMIT 200`, id, period.start_date, period.end_date);
+    steps = await all(env,
+      `SELECT id, step_level, step_date, teacher FROM steps
+        WHERE student_id = ? AND step_date BETWEEN ? AND ? ORDER BY step_date DESC, id DESC LIMIT 200`, id, period.start_date, period.end_date);
+  }
+  return {
+    student: { student_id: id, first_name: student.first_name, last_name: student.last_name, grade: student.grade },
+    balance: t.balance, earned: t.earned, spent: t.spent, fines_total: t.fines,
+    period,
+    bonuses, fines, steps,
+    breaks: await breakCounts(env, id, today, period),
+    on_break: !!(await one(env, "SELECT 1 AS x FROM break_log WHERE student_id = ? AND status = 'out'", id)),
+    ledger: await all(env,
+      `SELECT p.id, p.type, p.amount, p.note, p.tx_date, c.name AS category, c.emoji
+         FROM p5_transactions p LEFT JOIN p5_categories c ON c.id = p.category_id
+        WHERE p.student_id = ? ORDER BY p.id DESC LIMIT 50`, id),
+  };
+});
 
 add('GET', '/api/student/store', 'student', async ({ env, student }) => {
   const balance = await balanceOf(env, student.student_id);

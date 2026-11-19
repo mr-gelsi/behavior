@@ -2,6 +2,7 @@
 import { all, one, run, st, batch, chunked, audit, getSettings } from './db.js';
 import { bad, fmtMD, todayStr } from './util.js';
 import { cleanup } from './auth.js';
+import { closeStaleBreaks } from './breaks.js';
 
 export async function getDay(env, id) {
   const d = await one(env,
@@ -237,6 +238,7 @@ export async function lockDay(env, day, actor) {
 
 export async function runScheduled(env) {
   await cleanup(env);
+  await closeStaleBreaks(env);
   const now = new Date().toISOString();
   const today = todayStr(env);
   const due = await all(env,

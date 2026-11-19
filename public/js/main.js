@@ -4,6 +4,8 @@ import * as P from './views-p5.js';
 import { rewardsStaff } from './views-rewards.js';
 import { admin, pinSheet } from './views-admin.js';
 import { studentHome, studentStore, studentSeat } from './views-student.js';
+import { icon } from './icons.js';
+import { breaksStaff, studentTimer, openBreakModal } from './views-breaks.js';
 import { classesList, classDetail, studentClasses } from './views-classes.js';
 
 const root = document.getElementById('root');
@@ -63,15 +65,14 @@ async function showLogin(message) {
 // App shell
 // ---------------------------------------------------------------------------------------
 const STAFF_NAV = [
-  ['dashboard', '\ud83d\udcca', 'Dashboard'], ['record', '\u270f\ufe0f', 'Record Steps'],
-  ['grade/6', '6\ufe0f\u20e3', '6th Grade'], ['grade/7', '7\ufe0f\u20e3', '7th Grade'], ['grade/8', '8\ufe0f\u20e3', '8th Grade'],
-  ['monthly', '\ud83d\udcc5', 'Monthly Report'], ['reward-report', '\ud83c\udf81', 'Reward Day Report'],
-  ['p5', '\u2b50', 'P5 Points'], ['store', '\ud83d\udecd\ufe0f', 'Store'], ['rewards', '\ud83c\udf9f\ufe0f', 'Rewards Day'], ['classes', '\ud83c\udfeb', 'My Classes'],
+  ['dashboard', 'dashboard', 'Dashboard'], ['record', 'record', 'Record Steps'], ['reports', 'reports', 'Behavior Reports'],
+  ['monthly', 'monthly', 'Monthly Report'], ['reward-report', 'gift', 'Reward Day Report'],
+  ['p5', 'star', 'P5 Points'], ['store', 'store', 'Store'], ['rewards', 'ticket', 'Rewards Day'], ['classes', 'classes', 'My Classes'], ['breaks', 'clock', 'Break Tracker'],
 ];
-const STUDENT_NAV = [['me', '\ud83c\udfe0', 'My P5'], ['shop', '\ud83d\udecd\ufe0f', 'Store'], ['seat', '\ud83c\udf9f\ufe0f', 'Reserve a Seat'], ['classes', '\ud83d\udd11', 'My Classes']];
+const STUDENT_NAV = [['me', 'bank', 'My P5'], ['shop', 'store', 'Store'], ['seat', 'ticket', 'Reserve a Seat'], ['classes', 'key', 'My Classes']];
 
 function defaultNav(me) {
-  return me.type === 'staff' ? [...STAFF_NAV, ...(me.user.role === 'admin' ? [['admin', '\u2699\ufe0f', 'Admin']] : [])] : STUDENT_NAV;
+  return me.type === 'staff' ? [...STAFF_NAV, ...(me.user.role === 'admin' ? [['admin', 'admin', 'Admin']] : [])] : STUDENT_NAV;
 }
 // The person's saved order first; anything they haven't placed (for example a tab added later) follows in the default order.
 function orderedNav(me) {
@@ -90,7 +91,7 @@ function currentPath() {
 }
 function markActive() {
   const path = currentPath();
-  $$('.nav a', root).forEach((a) => a.classList.toggle('active', a.dataset.path === path || (path === 'pin-sheet' && a.dataset.path === 'admin') || (path.startsWith('class/') && a.dataset.path === 'classes')));
+  $$('.nav a', root).forEach((a) => a.classList.toggle('active', a.dataset.path === path || a.dataset.path === path.split('/')[0] || (path === 'pin-sheet' && a.dataset.path === 'admin') || (path.startsWith('class/') && a.dataset.path === 'classes')));
 }
 function drawNav(focusSel) {
   const nav = $('#nav', root);
@@ -98,13 +99,13 @@ function drawNav(focusSel) {
   const bar = $('#navbar', root);
   if (!navDraft) {
     mount(bar, h``);
-    mount(nav, h`${orderedNav(state.me).map(([path, ico, label]) => h`<a href="#/${path}" data-path="${path}"><span class="ico">${ico}</span>${label}</a>`)}`);
+    mount(nav, h`${orderedNav(state.me).map(([path, ico, label]) => h`<a href="#/${path}" data-path="${path}"><span class="ico">${icon(ico)}</span><span class="nav-text">${label}</span></a>`)}`);
     mount(tools, h`<button type="button" class="link-btn" id="navEdit">\u2195 Reorder menu</button>`);
     markActive();
     return;
   }
   mount(nav, h`${navDraft.map(([path, ico, label], i) => h`<div class="nav-row" data-path="${path}">
-      <span class="nav-handle" title="Drag to move" aria-hidden="true">\u22ee\u22ee</span><span class="ico">${ico}</span><span class="nav-label" title="${label}">${label}</span>
+      <span class="nav-handle" title="Drag to move" aria-hidden="true">\u22ee\u22ee</span><span class="ico">${icon(ico)}</span><span class="nav-label" title="${label}">${label}</span>
       <span class="nav-move"><button type="button" data-up="${path}" aria-label="Move ${label} up" ${i === 0 ? raw('disabled') : ''}>\u25b2</button><button type="button" data-down="${path}" aria-label="Move ${label} down" ${i === navDraft.length - 1 ? raw('disabled') : ''}>\u25bc</button></span></div>`)}`);
   mount(tools, h``);
   mount(bar, h`<div class="row"><button type="button" class="btn small primary" id="navSave">Save</button><button type="button" class="btn small" id="navReset">Reset</button><button type="button" class="btn small" id="navCancel">Cancel</button></div>
@@ -185,16 +186,18 @@ function shell() {
       <div class="nav-tools no-print" id="navtools"></div>
       <div class="sidebar-foot">${me.settings.school_name}<br>${staff ? h`<a class="c-inherit" href="#/password">Change password</a>` : ''}</div></aside>
     <div class="main">
-      <header class="topbar"><div class="title"><button class="menu-btn" id="menu" aria-label="Open menu">\u2630</button><span class="title-text">Behavior Tracker Command Center</span></div>
+      <header class="topbar"><div class="title"><button class="menu-btn" id="menu" aria-label="Open menu">${icon('menu', 22)}</button><span class="title-text">Behavior Tracker Command Center</span></div>
         <div class="right-side">
           ${staff ? h`<label for="yearsel" class="hidden">School year</label><select class="year-select" id="yearsel">${me.years.map((y) => h`<option value="${y}" ${y === state.year ? raw('selected') : ''}>${y}</option>`)}</select>` : ''}
-          <span class="muted role-label">${who}</span><button class="signout" id="signout">Sign out</button><span class="pill-status" id="sync-pill">\u2713 Synced</span></div></header>
+          ${staff ? '' : h`<button class="top-btn" id="leaveClass" type="button">${icon('drop', 18)}<span class="top-btn-text">Restroom / Water</span></button>`}<span class="role-label">${who}</span><button class="signout" id="signout">Sign out</button><span class="pill-status" id="sync-pill">\u2713 Synced</span></div></header>
       <main class="page" id="page" tabindex="-1"></main></div></div>`);
   drawNav();
   wireNavEditing();
   $('#menu', root).addEventListener('click', () => document.body.classList.toggle('menu-open'));
   $('#sidebar', root).addEventListener('click', (e) => { if (e.target.closest('a')) document.body.classList.remove('menu-open'); });
   $('#signout', root).addEventListener('click', async () => { try { await api('/logout', { method: 'POST', body: {} }); } catch { /* ignore */ } state.me = null; showLogin(); });
+  const lc = $('#leaveClass', root);
+  if (lc) lc.addEventListener('click', () => openBreakModal());
   const ys = $('#yearsel', root);
   if (ys) ys.addEventListener('change', () => { state.year = ys.value; route(); });
 }
@@ -202,10 +205,10 @@ function shell() {
 const STAFF_ROUTES = {
   dashboard: (el) => S.dashboard(el), record: (el) => S.record(el), monthly: (el) => S.monthly(el),
   'reward-report': (el) => S.rewardReport(el), p5: (el) => P.p5(el), store: (el) => P.storeStaff(el),
-  rewards: (el) => rewardsStaff(el), classes: (el) => classesList(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
+  rewards: (el) => rewardsStaff(el), classes: (el) => classesList(el), breaks: (el) => breaksStaff(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
   password: (el) => passwordPage(el),
 };
-const STUDENT_ROUTES = { me: studentHome, shop: studentStore, seat: studentSeat, classes: studentClasses };
+const STUDENT_ROUTES = { me: studentHome, shop: studentStore, seat: studentSeat, classes: studentClasses, timer: studentTimer };
 
 async function route() {
   if (!state.me) return;
@@ -218,15 +221,31 @@ async function route() {
   try {
     if (staff) {
       const g = /^grade\/([678])$/.exec(path);
+      const rp = /^reports(?:\/(6|7|8|monthly|reward))?$/.exec(path);
       const cd = /^class\/(\d+)$/.exec(path);
-      if (g) await S.grade(page, Number(g[1]));
+      if (g) location.hash = `#/reports/${g[1]}`;
+      else if (rp) await reportsPage(page, rp[1] || '6');
       else if (cd) await classDetail(page, Number(cd[1]));
       else if (STAFF_ROUTES[path] && !(path === 'admin' && state.me.user.role !== 'admin') && !(path === 'pin-sheet' && state.me.user.role !== 'admin')) await STAFF_ROUTES[path](page);
       else location.hash = '#/dashboard';
-    } else if (STUDENT_ROUTES[path]) await STUDENT_ROUTES[path](page);
+    } else if (STUDENT_ROUTES[path]) {
+      // A student who is out of class always lands on the timer until they are back.
+      if (path !== 'timer' && (await api('/student/break')).active) { location.hash = '#/timer'; return; }
+      await STUDENT_ROUTES[path](page);
+    }
     else location.hash = '#/me';
     window.scrollTo(0, 0);
   } catch (e) { fail(e); mount(page, h`<div class="card"><div class="empty"><strong>Couldn\u2019t load this page</strong>${e.message}</div></div>`); }
+}
+
+// Behavior Reports: the 6th, 7th and 8th grade lists live here as tabs, next to the monthly and Rewards Day reports.
+const REPORT_TABS = [['6', '6th Grade'], ['7', '7th Grade'], ['8', '8th Grade'], ['monthly', 'Monthly Report'], ['reward', 'Reward Day Report']];
+async function reportsPage(el, tab) {
+  mount(el, h`<nav class="tabs tab-links no-print" aria-label="Behavior reports">${REPORT_TABS.map(([k, label]) => h`<a href="#/reports/${k}" ${k === tab ? raw('aria-current="page"') : ''}>${label}</a>`)}</nav><div id="tabbody"></div>`);
+  const body = $('#tabbody', el);
+  if (tab === 'monthly') await S.monthly(body);
+  else if (tab === 'reward') await S.rewardReport(body);
+  else await S.grade(body, Number(tab));
 }
 
 function passwordPage(el) {

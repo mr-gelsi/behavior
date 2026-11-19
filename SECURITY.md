@@ -54,3 +54,11 @@ This site stores student names, grade, homeroom, behavior steps, and P5 points. 
 ## Reporting a problem
 
 If you think a PIN, password, export, or either secret has been exposed: reset the affected PINs or passwords in Admin, and if `PEPPER` or `SETUP_TOKEN` leaked, replace the secret in Cloudflare (replacing `PEPPER` signs everyone out and requires resetting all passwords and PINs). Then check the audit log for the time window involved.
+
+
+## Break tracker PINs
+
+- Teacher PINs are 4 digits, so they are a classroom convenience, not strong security. They are stored as a keyed hash (using the secret `PEPPER`), never as digits, and no page ever shows them.
+- A student gets 5 wrong teacher PINs per 15 minutes (and each school network address 40) before being locked out for 15 minutes. Wrong guesses are written to the audit log (Admin) so you can spot a student guessing.
+- Times are stamped by the server. A student can only stop their own timer, by typing their own student number.
+- Change PINs now and then, and reset one from the Break Tracker page if a student learns it.

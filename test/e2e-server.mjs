@@ -12,7 +12,7 @@ const PORT = Number(process.env.PORT || 8787);
 const db = new D1Shim();
 for (const f of readdirSync(join(root, 'migrations')).sort()) db.exec(readFileSync(join(root, 'migrations', f), 'utf8'));
 
-const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.txt': 'text/plain', '.svg': 'image/svg+xml', '.png': 'image/png', '.ico': 'image/x-icon' };
+const TYPES = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.txt': 'text/plain', '.svg': 'image/svg+xml' };
 const PUB = join(root, 'public');
 const env = {
   DB: db, PEPPER: 'e2e-pepper-e2e-pepper-e2e-pepper-123456', SETUP_TOKEN: 'e2e-setup-token-123456', TIMEZONE: 'America/Los_Angeles', PBKDF2_ITERATIONS: '10000',
