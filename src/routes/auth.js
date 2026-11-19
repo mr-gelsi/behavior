@@ -60,12 +60,16 @@ add('POST', '/api/login', 'none', async ({ env, body, ip }) => {
     return json({ ok: true, type: 'staff' }, 200, { 'set-cookie': sessionCookie(token, maxAge) });
   }
   const sid = String(body.student_id || '').trim();
-  const pin = String(body.pin || '').trim();
+  const secretRaw = String(body.pin ?? body.secret ?? '').slice(0, 200);
+  const pin = secretRaw.trim();
   if (!/^\d{1,9}$/.test(sid)) throw new HttpError(401, 'Student ID or PIN is incorrect.');
   const keys = [`student:${sid}`, `ip:${ip}`];
   await assertNotLocked(env, keys, [5, 150]);
-  const s = await one(env, 'SELECT student_id, pin_hash FROM students WHERE student_id = ? AND active = 1', Number(sid));
-  const ok = s && s.pin_hash ? await verifyPin(pin, s.student_id, s.pin_hash, env) : false;
+  const s = await one(env, 'SELECT student_id, pin_hash, pw_hash FROM students WHERE student_id = ? AND active = 1', Number(sid));
+  // Once a student has created a password, only the password works. Their PIN is the first-time / reset code.
+  const ok = !s ? false
+    : s.pw_hash ? await verifyPassword(secretRaw, s.pw_hash, env)
+    : s.pin_hash ? await verifyPin(pin, s.student_id, s.pin_hash, env) : false;
   if (!ok) {
     await recordFailure(env, keys);
     throw new HttpError(401, 'Student ID or PIN is incorrect.');
@@ -85,7 +89,8 @@ add('GET', '/api/me', 'any', async ({ env, session, user, student }) => {
   const today = todayStr(env);
   const prefs = { nav_order: await loadNavOrder(env, session) };
   if (student) {
-    return { type: 'student', student, settings: { school_name: settings.school_name }, today, prefs };
+    const pw = await one(env, 'SELECT pw_hash FROM students WHERE student_id = ?', student.student_id);
+    return { type: 'student', student, settings: { school_name: settings.school_name }, today, prefs, needs_password: !(pw && pw.pw_hash) };
   }
   const period = await one(env, 'SELECT id, name, start_date, end_date FROM reward_periods WHERE ? BETWEEN start_date AND end_date ORDER BY start_date DESC LIMIT 1', today);
   const years = new Set([schoolYearOf(today)]);
@@ -118,5 +123,29 @@ add('POST', '/api/me/password', 'staff', async ({ env, body, user, session }) =>
   await run(env, 'UPDATE users SET pw_hash = ? WHERE id = ?', await hashPassword(next, env), user.id);
   await endAllSessions(env, 'staff', user.id);
   await audit(env, `staff:${user.email}`, 'password.change', '');
+  return json({ ok: true }, 200, { 'set-cookie': clearedCookie() });
+});
+
+// Students create (or change) their own password. The PIN from school works only until they do this.
+add('POST', '/api/student/password', 'student', async ({ env, body, student, ip, actor }) => {
+  const current = String(body.current ?? '').slice(0, 200);
+  const next = String(body.next ?? '').slice(0, 200);
+  const keys = [`student:${student.student_id}`, `ip:${ip}`];
+  await assertNotLocked(env, keys, [5, 150]);
+  const row = await one(env, 'SELECT pin_hash, pw_hash FROM students WHERE student_id = ?', student.student_id);
+  const okNow = row.pw_hash ? await verifyPassword(current, row.pw_hash, env)
+    : row.pin_hash ? await verifyPin(current.trim(), student.student_id, row.pin_hash, env) : false;
+  if (!okNow) {
+    await recordFailure(env, keys);
+    throw new HttpError(403, row.pw_hash ? 'Your current password is not correct.' : 'Your PIN is not correct.');
+  }
+  if (next.length < 8) throw bad('Your new password needs at least 8 characters.');
+  if (next === current) throw bad('Pick a password that is different from your PIN or old password.');
+  if (next.replace(/\s/g, '') === String(student.student_id)) throw bad('Your password cannot be your student number.');
+  if (/^(\d)\1+$/.test(next)) throw bad('Pick something harder to guess than one repeated digit.');
+  await run(env, 'UPDATE students SET pw_hash = ? WHERE student_id = ?', await hashPassword(next, env), student.student_id);
+  await clearFailures(env, keys[0]);
+  await endAllSessions(env, 'student', student.student_id);
+  await audit(env, actor, 'student.password_set', '');
   return json({ ok: true }, 200, { 'set-cookie': clearedCookie() });
 });

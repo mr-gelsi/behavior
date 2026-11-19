@@ -748,3 +748,8 @@ dialog::backdrop { background: rgba(10, 12, 16, .7); }
   h1, .page-head h1 { color: #000; }
   .page > .muted, .page-head .muted { color: #333; }
 }
+
+/* Student names on the seating chart: black so they are easy to read */
+.desk:not(.empty) .dname, .desk:not(.teacher) .dname { color: #000; }
+.desk.teacher .dname { color: #000; }
+.desk:not(.empty) .dsub { color: #333; }

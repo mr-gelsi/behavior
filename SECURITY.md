@@ -62,3 +62,7 @@ If you think a PIN, password, export, or either secret has been exposed: reset t
 - A student gets 5 wrong teacher PINs per 15 minutes (and each school network address 40) before being locked out for 15 minutes. Wrong guesses are written to the audit log (Admin) so you can spot a student guessing.
 - Times are stamped by the server. A student can only stop their own timer, by typing their own student number.
 - Change PINs now and then, and reset one from the Break Tracker page if a student learns it.
+
+## Student passwords
+
+Student passwords are stored with the same slow, salted, secret-keyed hash as staff passwords (never as text). Wrong guesses count toward the same 5-per-15-minutes lock as PINs. Setting a password signs the student out everywhere and switches off their PIN.

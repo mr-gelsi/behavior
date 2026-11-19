@@ -3,7 +3,7 @@ import { add } from '../router.js';
 import { one, run } from '../lib/db.js';
 import { bad } from '../lib/util.js';
 
-const STAFF_PATHS = ['dashboard', 'record', 'reports', 'monthly', 'reward-report', 'p5', 'store', 'rewards', 'classes', 'breaks'];
+const STAFF_PATHS = ['dashboard', 'record', 'reports', 'reward-report', 'p5', 'store', 'rewards', 'classes', 'breaks'];
 const STUDENT_PATHS = ['me', 'shop', 'seat', 'classes'];
 
 const allowedPaths = (session) =>

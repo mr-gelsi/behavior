@@ -188,7 +188,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 361 automated checks
+npm test                           # 376 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.
@@ -210,3 +210,6 @@ There is also a demo server with **fake** students for trying every screen: `nod
 - **Restroom / Water (students):** the button in the top bar (and on My P5) asks for a reason and a teacher PIN, then opens a timer. The student stops it by typing their own student number. All times are stamped by the server. A break still open after 3 hours is closed automatically and labelled "auto-closed".
 - **My P5 (students):** bank-style card with the ticket balance, the student ID as the account number, name at the bottom, boxes for total tickets and total spent, and buttons for this rewards period's bonuses and fines/steps.
 - **One more migration:** run `migrations/0007_breaks.sql` (or `0007_breaks_console.sql` in the Cloudflare console) once.
+
+- **Student passwords:** after signing in with the PIN, students are asked to create their own password (8+ characters). From then on they sign in with their student ID and that password and the PIN stops working. An admin PIN reset clears the password, so the student starts over with the new PIN. Run `migrations/0008_student_passwords.sql` once (console copy: `0008_student_passwords_console.sql`).
+- The Student tab is now first on the sign-in page, and Monthly Report lives only under Behavior Reports.

@@ -996,6 +996,38 @@ ok(Array.isArray(h2.bonuses) && Array.isArray(h2.fines) && Array.isArray(h2.step
 ok(!JSON.stringify(h2).match(/pin_hash|notes/), 'the student bank page leaks no PIN hashes or private step notes');
 
 // ------------------------------------------------------------------------------------
+section('Students create their own password');
+const pwS = await login({ kind: 'student', student_id: '3002', pin: pins[3002] });
+r = await call(pwS, 'GET', '/api/me');
+ok(r.data.needs_password === true, 'a student who has only a PIN is asked to make a password');
+r = await call(pwS, 'POST', '/api/student/password', { current: '000000', next: 'blue-planet-77' });
+ok(r.status === 403, 'the PIN must be right to set a password');
+for (const [bad, why] of [['short', 'too short'], ['3002', 'too short'], ['11111111', 'one repeated digit'], ['  3002  3002', 'x']].slice(0, 3)) {
+  r = await call(pwS, 'POST', '/api/student/password', { current: pins[3002], next: bad });
+  ok(r.status === 400, `password refused: ${why}`);
+}
+r = await call(pwS, 'POST', '/api/student/password', { current: pins[3002], next: pins[3002] });
+ok(r.status === 400, 'the new password cannot equal the PIN');
+r = await call(pwS, 'POST', '/api/student/password', { current: pins[3002], next: 'blue-planet-77' });
+ok(r.data.ok, 'the student sets a password');
+r = await call(pwS, 'GET', '/api/me');
+ok(r.status === 401, 'they are signed out after setting it');
+ok(!db.db.prepare('SELECT pw_hash FROM students WHERE student_id = 3002').get().pw_hash.includes('blue-planet'), 'the password is stored hashed');
+r = await login({ kind: 'student', student_id: '3002', pin: pins[3002] });
+ok(r.status === 401, 'the old PIN stops working once a password exists');
+const pw2 = await login({ kind: 'student', student_id: '3002', pin: 'blue-planet-77' });
+ok(pw2.status === 200, 'the new password signs in (with spaces and letters allowed)');
+r = await call(pw2, 'GET', '/api/me');
+ok(r.data.needs_password === false, 'the student is no longer asked to make a password');
+r = await call(pw2, 'POST', '/api/student/password', { current: 'wrong-password', next: 'another-pass-99' });
+ok(r.status === 403, 'changing the password needs the current one');
+db.db.exec('DELETE FROM login_attempts');
+r = await call(admin, 'POST', '/api/admin/students/3002/pin');
+const reset = r.data.pin ? { pin: r.data.pin } : (r.data.pins || [])[0];
+ok(reset && !db.db.prepare('SELECT pw_hash FROM students WHERE student_id = 3002').get().pw_hash, 'an admin PIN reset also clears the student’s password');
+if (reset) { r = await login({ kind: 'student', student_id: '3002', pin: reset.pin }); ok(r.status === 200, 'the new PIN works again after a reset'); }
+
+// ------------------------------------------------------------------------------------
 section('Export and audit');
 r = await call(admin, 'GET', '/api/admin/export?table=students');
 ok(typeof r.data === 'string' && r.data.startsWith('student_id,') && !/pin_hash|hmac\$/.test(r.data), 'student export never includes PIN hashes');

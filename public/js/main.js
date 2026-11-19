@@ -17,7 +17,7 @@ async function showLogin(message) {
   document.body.classList.remove('menu-open');
   let setup = false;
   try { setup = (await api('/setup/status')).needed; } catch { /* offline */ }
-  let kind = 'staff';
+  let kind = 'student';
   const paint = () => {
     mount(root, h`<div class="login-wrap"><div class="login-card">
       <div class="logo-tile login-logo"><img src="/logo.png" width="640" height="289" alt="Panther logo"></div>
@@ -29,11 +29,11 @@ async function showLogin(message) {
         <div class="field"><label for="su_p">Password (12 or more characters)</label><input type="password" id="su_p" autocomplete="new-password"></div>
         <button class="btn primary w100" id="go">Create Admin account</button>`
       : h`<p class="muted center">Sign in to continue.</p>
-        <div class="seg mb16" id="kind" role="group" aria-label="Who is signing in"><button type="button" data-k="staff" aria-pressed="${kind === 'staff'}">Staff</button><button type="button" data-k="student" aria-pressed="${kind === 'student'}">Student</button></div>
+        <div class="seg mb16" id="kind" role="group" aria-label="Who is signing in"><button type="button" data-k="student" aria-pressed="${kind === 'student'}">Student</button><button type="button" data-k="staff" aria-pressed="${kind === 'staff'}">Staff</button></div>
         ${kind === 'staff' ? h`<div class="field"><label for="l_e">Email</label><input type="email" id="l_e" autocomplete="username"></div>
           <div class="field"><label for="l_p">Password</label><input type="password" id="l_p" autocomplete="current-password"></div>`
         : h`<div class="field"><label for="l_s">Student ID</label><input type="text" id="l_s" inputmode="numeric" autocomplete="username"></div>
-          <div class="field"><label for="l_n">PIN</label><input type="password" id="l_n" inputmode="numeric" autocomplete="current-password" maxlength="6"></div>`}
+          <div class="field"><label for="l_n">PIN or password</label><input type="password" id="l_n" autocomplete="current-password" maxlength="200"><div class="help">First time? Use the 6-digit PIN your teacher gave you. After you make your own password, use that instead.</div></div>`}
         <button class="btn primary w100" id="go">Sign in</button>`}
       <div class="error-text" id="lerr" role="alert">${message || ''}</div></div></div>`);
     $$('#kind button', root).forEach((b) => b.addEventListener('click', () => { kind = b.dataset.k; paint(); }));
@@ -66,7 +66,7 @@ async function showLogin(message) {
 // ---------------------------------------------------------------------------------------
 const STAFF_NAV = [
   ['dashboard', 'dashboard', 'Dashboard'], ['record', 'record', 'Record Steps'], ['reports', 'reports', 'Behavior Reports'],
-  ['monthly', 'monthly', 'Monthly Report'], ['reward-report', 'gift', 'Reward Day Report'],
+  ['reward-report', 'gift', 'Reward Day Report'],
   ['p5', 'star', 'P5 Points'], ['store', 'store', 'Store'], ['rewards', 'ticket', 'Rewards Day'], ['classes', 'classes', 'My Classes'], ['breaks', 'clock', 'Break Tracker'],
 ];
 const STUDENT_NAV = [['me', 'bank', 'My P5'], ['shop', 'store', 'Store'], ['seat', 'ticket', 'Reserve a Seat'], ['classes', 'key', 'My Classes']];
@@ -184,7 +184,7 @@ function shell() {
       <div class="nav-edit-bar no-print" id="navbar"></div>
       <nav class="nav" id="nav" aria-label="Pages"></nav>
       <div class="nav-tools no-print" id="navtools"></div>
-      <div class="sidebar-foot">${me.settings.school_name}<br>${staff ? h`<a class="c-inherit" href="#/password">Change password</a>` : ''}</div></aside>
+      <div class="sidebar-foot">${me.settings.school_name}<br>${staff ? h`<a class="c-inherit" href="#/password">Change password</a>` : h`<a class="c-inherit" href="#/me" id="stuPw">${me.needs_password ? 'Create a password' : 'Change password'}</a>`}</div></aside>
     <div class="main">
       <header class="topbar"><div class="title"><button class="menu-btn" id="menu" aria-label="Open menu">${icon('menu', 22)}</button><span class="title-text">Behavior Tracker Command Center</span></div>
         <div class="right-side">
@@ -196,6 +196,8 @@ function shell() {
   $('#menu', root).addEventListener('click', () => document.body.classList.toggle('menu-open'));
   $('#sidebar', root).addEventListener('click', (e) => { if (e.target.closest('a')) document.body.classList.remove('menu-open'); });
   $('#signout', root).addEventListener('click', async () => { try { await api('/logout', { method: 'POST', body: {} }); } catch { /* ignore */ } state.me = null; showLogin(); });
+  const sp = $('#stuPw', root);
+  if (sp) sp.addEventListener('click', (e) => { e.preventDefault(); studentPasswordModal(); });
   const lc = $('#leaveClass', root);
   if (lc) lc.addEventListener('click', () => openBreakModal());
   const ys = $('#yearsel', root);
@@ -221,6 +223,7 @@ async function route() {
   try {
     if (staff) {
       const g = /^grade\/([678])$/.exec(path);
+      if (path === 'monthly') { location.hash = '#/reports/monthly'; return; }
       const rp = /^reports(?:\/(6|7|8|monthly|reward))?$/.exec(path);
       const cd = /^class\/(\d+)$/.exec(path);
       if (g) location.hash = `#/reports/${g[1]}`;
@@ -248,6 +251,32 @@ async function reportsPage(el, tab) {
   else await S.grade(body, Number(tab));
 }
 
+// Students make their own password. Until they do, the PIN from school is their password.
+function studentPasswordModal() {
+  const first = state.me.needs_password;
+  const m = modal(first ? 'Create your own password' : 'Change your password', h`
+    <p class="muted">${first ? 'Pick a password only you know. After this, you sign in with your student ID and your new password, and the PIN stops working.' : 'You will be signed out and asked to sign in with your new password.'}</p>
+    <div class="field"><label for="sp_c">${first ? 'Your PIN from school' : 'Current password'}</label><input type="password" id="sp_c" autocomplete="current-password" maxlength="200"></div>
+    <div class="field"><label for="sp_n">New password (8 or more characters)</label><input type="password" id="sp_n" autocomplete="new-password" maxlength="200"></div>
+    <div class="field"><label for="sp_n2">Type the new password again</label><input type="password" id="sp_n2" autocomplete="new-password" maxlength="200"></div>
+    <div class="row"><button class="btn primary" id="sp_go" type="button">Save password</button>${first ? h`<button class="btn" id="sp_later" type="button">Maybe later</button>` : ''}</div>
+    <div class="error-text" id="sp_err" role="alert"></div>`);
+  const b = m.body;
+  const later = $('#sp_later', b);
+  if (later) later.addEventListener('click', () => m.close());
+  const go = async () => {
+    const err = $('#sp_err', b);
+    err.textContent = '';
+    if ($('#sp_n', b).value !== $('#sp_n2', b).value) { err.textContent = 'The two new passwords do not match.'; return; }
+    try {
+      await api('/student/password', { method: 'POST', body: { current: $('#sp_c', b).value, next: $('#sp_n', b).value } });
+      m.close(); state.me = null; showLogin('Password saved. Sign in with your student ID and your new password.');
+    } catch (e) { err.textContent = e.message; }
+  };
+  $('#sp_go', b).addEventListener('click', go);
+  $$('input', b).forEach((i) => i.addEventListener('keydown', (e) => { if (e.key === 'Enter') go(); }));
+}
+
 function passwordPage(el) {
   mount(el, h`<div class="page-head"><div><h1>Change password</h1><p class="muted">Use at least 12 characters. You\u2019ll be signed out and asked to sign in again.</p></div></div>
     <div class="card maxw480"><div class="field"><label for="pw_c">Current password</label><input type="password" id="pw_c" autocomplete="current-password"></div>
@@ -272,6 +301,7 @@ async function boot() {
   }
   state.year = state.me.type === 'staff' ? state.me.school_year : null;
   shell();
+  if (state.me.type === 'student' && state.me.needs_password) setTimeout(studentPasswordModal, 400);
   if (!location.hash || location.hash === '#') location.hash = state.me.type === 'staff' ? '#/dashboard' : '#/me';
   route();
 }

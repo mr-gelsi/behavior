@@ -211,7 +211,7 @@ async function makePins(env, rows) {
   const stmts = [];
   for (const s of rows) {
     const pin = randomPin();
-    stmts.push(st(env, 'UPDATE students SET pin_hash = ? WHERE student_id = ?', await hashPin(pin, s.student_id, env), s.student_id));
+    stmts.push(st(env, 'UPDATE students SET pin_hash = ?, pw_hash = NULL WHERE student_id = ?', await hashPin(pin, s.student_id, env), s.student_id));
     out.push({ student_id: s.student_id, last_name: s.last_name, first_name: s.first_name, grade: s.grade, homeroom_teacher: s.homeroom_teacher, pin });
   }
   await chunked(env, stmts, 40);
