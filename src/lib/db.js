@@ -29,6 +29,7 @@ export const SETTING_DEFAULTS = {
   teacher_max_p5: '10',
   allow_negative_balance: '1',
   code_label: 'Code',
+  break_bands: '15,13,11,8',
 };
 
 export async function getSettings(env) {
@@ -42,6 +43,7 @@ export async function getSettings(env) {
     teacher_max_p5: Number(s.teacher_max_p5),
     allow_negative_balance: s.allow_negative_balance === '1',
     code_label: s.code_label,
+    break_bands: String(s.break_bands).split(',').map(Number),
   };
 }
 

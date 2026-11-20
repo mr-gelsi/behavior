@@ -1358,6 +1358,39 @@ r = await call(js1, 'PUT', '/api/me/nav-order', { order: ['equipment', 'me', 'sh
 ok(r.data.ok !== false && r.status === 200, 'the new menu items can be reordered');
 
 // ------------------------------------------------------------------------------------
+section('Office classification and restroom bands');
+r = await call(admin, 'GET', '/api/admin/users');
+ok(r.data.users.every((u) => u.classification === 'teacher'), 'existing staff default to the Teacher classification');
+r = await call(admin, 'POST', '/api/admin/users', { email: 'office@school.org', first_name: 'Olive', last_name: 'Front', role: 'teacher', classification: 'office', password: 'office password 12' });
+ok(r.data.ok, 'admin creates an Office staff account');
+r = await call(admin, 'POST', '/api/admin/users', { email: 'x@school.org', first_name: 'X', last_name: 'Y', role: 'teacher', classification: 'janitor', password: 'office password 12' });
+ok(r.status === 400, 'unknown classifications are refused');
+const offUser = (await call(admin, 'GET', '/api/admin/users')).data.users.find((u) => u.email === 'office@school.org');
+ok(offUser.classification === 'office', 'the classification is saved');
+r = await call(admin, 'PATCH', `/api/admin/users/${offUser.id}`, { classification: 'teacher' });
+ok(r.data.ok && (await call(admin, 'GET', '/api/admin/users')).data.users.find((u) => u.id === offUser.id).classification === 'teacher', 'classification can be changed');
+const offSess = await login({ kind: 'staff', email: 'office@school.org', password: 'office password 12' });
+r = await call(offSess, 'GET', '/api/me');
+ok(r.data.user.classification === 'teacher', 'the signed-in account knows its classification');
+r = await call(teacher, 'PATCH', `/api/admin/users/${offUser.id}`, { classification: 'office' });
+ok(r.status === 403, 'teachers cannot change classifications');
+r = await call(admin, 'GET', '/api/admin/settings');
+ok(JSON.stringify(r.data.settings.break_bands) === '[15,13,11,8]', 'restroom bands default to 15, 13, 11, 8');
+r = await call(teacher, 'GET', '/api/breaks/report');
+ok(JSON.stringify(r.data.bands) === '[15,13,11,8]', 'the break report carries the bands');
+ok(r.data.out_now.every((o) => typeof o.trips === 'number'), 'students out now carry their trip count');
+const sv = (await call(admin, 'GET', '/api/admin/settings')).data.settings;
+r = await call(admin, 'PUT', '/api/admin/settings', { ...sv, break_bands: [10, 5, 5] });
+ok(r.status === 400, 'bands need four numbers');
+r = await call(admin, 'PUT', '/api/admin/settings', { ...sv, break_bands: [10, 0, 5, 5] });
+ok(r.status === 400, 'each band must be at least 1');
+r = await call(admin, 'PUT', '/api/admin/settings', { ...sv, break_bands: [10, 6, 4, 2] });
+ok(r.data.ok && JSON.stringify((await call(teacher, 'GET', '/api/breaks/report')).data.bands) === '[10,6,4,2]', 'admin changes the bands and teachers see them');
+r = await call(teacher, 'PUT', '/api/admin/settings', { ...sv, break_bands: [1, 1, 1, 1] });
+ok(r.status === 403, 'teachers cannot change the bands');
+await call(admin, 'PUT', '/api/admin/settings', { ...sv, break_bands: [15, 13, 11, 8] });
+
+// ------------------------------------------------------------------------------------
 section('Export and audit');
 r = await call(admin, 'GET', '/api/admin/export?table=students');
 ok(typeof r.data === 'string' && r.data.startsWith('student_id,') && !/pin_hash|hmac\$/.test(r.data), 'student export never includes PIN hashes');

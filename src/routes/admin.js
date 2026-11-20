@@ -65,17 +65,22 @@ add('PUT', '/api/admin/settings', 'admin', async (c) => {
     allow_negative_balance: b.allow_negative_balance ? '1' : '0',
     code_label: V.str(b.code_label, 'Label for the Code field', { max: 30 }),
   };
+  if (b.break_bands !== undefined) {
+    if (!Array.isArray(b.break_bands) || b.break_bands.length !== 4) throw bad('Enter four numbers for the restroom and water bands.');
+    next.break_bands = b.break_bands.map((n, i) => V.int(n, `Restroom band ${i + 1}`, { min: 1, max: 500 })).join(',');
+  }
   await batch(c.env, Object.entries(next).map(([k, v]) =>
     st(c.env, 'INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value', k, v)));
   await audit(c.env, c.actor, 'settings.update', Object.keys(next).join(','));
   return { ok: true };
 });
 
+const CLASSES = ['teacher', 'office'];
 // ---- Staff users ------------------------------------------------------------------------
 
 add('GET', '/api/admin/users', 'admin', async ({ env }) => ({
   users: await all(env,
-    `SELECT id, email, name, last_name, role, active, created_at FROM users
+    `SELECT id, email, name, last_name, role, classification, active, created_at FROM users
       ORDER BY active DESC, lower(COALESCE(last_name, name)), lower(name)`),
 }));
 add('POST', '/api/admin/users', 'admin', async (c) => {
@@ -83,10 +88,11 @@ add('POST', '/api/admin/users', 'admin', async (c) => {
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) throw bad('Enter a valid email address.');
   const { name, last_name: lastName } = nameFromBody(c.body, null);
   const role = V.oneOf(c.body.role, 'Role', ['admin', 'teacher']);
+  const classification = V.oneOf(c.body.classification ?? 'teacher', 'Classification', CLASSES);
   const password = V.str(c.body.password, 'Password', { max: 200 });
   if (password.length < 12) throw bad('Password must be at least 12 characters.');
   if (await one(c.env, 'SELECT 1 AS x FROM users WHERE email = ?', email)) throw bad('A user with that email already exists.');
-  await run(c.env, 'INSERT INTO users (email, name, last_name, role, pw_hash) VALUES (?,?,?,?,?)', email, name, lastName, role, await hashPassword(password, c.env));
+  await run(c.env, 'INSERT INTO users (email, name, last_name, role, classification, pw_hash) VALUES (?,?,?,?,?,?)', email, name, lastName, role, classification, await hashPassword(password, c.env));
   await audit(c.env, c.actor, 'user.create', `${email} ${role}`);
   return { ok: true };
 });
@@ -96,6 +102,7 @@ add('PATCH', '/api/admin/users/:id', 'admin', async (c) => {
   if (!u) throw new HttpError(404, 'User not found.');
   const { name, last_name: lastName } = nameFromBody(c.body, u);
   const role = V.oneOf(c.body.role ?? u.role, 'Role', ['admin', 'teacher']);
+  const classification = V.oneOf(c.body.classification ?? u.classification ?? 'teacher', 'Classification', CLASSES);
   const active = (c.body.active ?? u.active) ? 1 : 0;
   if ((u.role === 'admin' && (role !== 'admin' || !active)) ) {
     const others = (await one(c.env, "SELECT COUNT(*) AS c FROM users WHERE role='admin' AND active=1 AND id <> ?", id)).c;
@@ -107,7 +114,7 @@ add('PATCH', '/api/admin/users/:id', 'admin', async (c) => {
     if (pw.length < 12) throw bad('Password must be at least 12 characters.');
     hash = await hashPassword(pw, c.env);
   }
-  await run(c.env, 'UPDATE users SET name=?, last_name=?, role=?, active=?, pw_hash=? WHERE id=?', name, lastName, role, active, hash, id);
+  await run(c.env, 'UPDATE users SET name=?, last_name=?, role=?, classification=?, active=?, pw_hash=? WHERE id=?', name, lastName, role, classification, active, hash, id);
   if (!active || c.body.password || role !== u.role) {
     await endAllSessions(c.env, 'staff', id);
     await clearFailures(c.env, `staff:${u.email}`);

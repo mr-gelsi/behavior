@@ -38,7 +38,7 @@ export async function loadSession(request, env) {
     return null;
   }
   if (s.user_type === 'staff') {
-    const user = await one(env, 'SELECT id, email, name, role FROM users WHERE id = ? AND active = 1', Number(s.user_ref));
+    const user = await one(env, 'SELECT id, email, name, role, classification FROM users WHERE id = ? AND active = 1', Number(s.user_ref));
     return user ? { type: 'staff', hash, user } : null;
   }
   const student = await one(env,

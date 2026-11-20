@@ -47,7 +47,7 @@ You need a free **GitHub** account and a **Cloudflare** account. Turn on two-fac
 
 ### Step 2: Create the database
 
-> Run **all five** files in `migrations/` (`0001` to `0010`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
+> Run **all five** files in `migrations/` (`0001` to `0011`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
 
 1. In the Cloudflare dashboard, open **Storage & databases → D1** and click **Create database**. Name it exactly `behavior-tracker`.
 2. Copy its **Database ID**.
@@ -188,7 +188,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 498 automated checks
+npm test                           # 512 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.
@@ -233,3 +233,13 @@ There is also a demo server with **fake** students for trying every screen: `nod
 - **Class jobs:** on any class, open the new **Jobs** tab. Add jobs (pick a preset such as Tech Helper or Materials Manager, or write your own), set the weekly salary in P5 tickets and the number of openings. Students open **My Classes** and press **Jobs** next to a class, then apply and explain why they'd be good for it. You see each application and press **Hire** or **Decline**, and **End job** later. A student can hold one job per class.
 - **Automatic pay:** every Friday the hourly background job pays each hired student their job's current salary as a P5 award (ledger note "Class job pay: Tech Helper (Period 2)"). If the school calendar marks that Friday as a day off, the last school day of that week is pay day. Nobody is paid twice for the same week, a missed week is caught up, and a student is paid only while they still hold the job in a class they are still in. Admins can also run it by hand with `POST /api/admin/payroll/run` (optional `as_of` date).
 - **Student leadership:** in **Admin > Roster > Edit** tick **Student leadership**. That student gets a **Store orders** tab next to **My bank**, listing pending School Store orders (not teachers' own custom rewards) with a **Mark handed out** button. Leaders never see prices or balances, cannot cancel or refund, and cannot hand out their own order. Untick the box and access ends immediately.
+
+## New: office classification, restroom warning colors, quick step reasons
+
+**One more migration:** run `migrations/0011_office_staff.sql` once (console copy: `0011_office_staff_console.sql`). The full set is now `0001` to `0011`.
+
+- **Office classification:** Admin > Staff users now has a **Classification** (Teacher or Office) next to Role. It is shown in the staff list and carried on the signed-in account. It does not change what a person can do; Role (Teacher or Admin) still controls access.
+- **Restroom and water warning colors:** on the Break Tracker, each student's trip count (restroom plus water, in the report's date range, which starts Aug 1 by default) is colored: green up to 15, yellow the next 13 (16-28), orange the next 11 (29-39), red the next 8 (40-47), and black above that. Yellow and up also show a chip (Watch, Warning, High, Over limit). Students out of class right now show their count too.
+- **Edit the bands:** Admin > Settings > Restroom and water warnings. Enter how many trips each of green, yellow, orange and red covers; the page shows the resulting ranges.
+- **Record Steps:** quick **Gum** and **Cell phone** buttons fill the Notes box (press again to clear).
+- **P5 awards and fines:** "What is it for?" is now **P5 Category**, and "Note" is now **What is it for (optional)**.

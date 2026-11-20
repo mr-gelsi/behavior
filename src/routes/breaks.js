@@ -3,7 +3,7 @@
 // The student stops the timer by entering their own student number; the server stamps the time they return.
 // All times come from the server clock, never from the browser.
 import { add } from '../router.js';
-import { all, one, run, audit } from '../lib/db.js';
+import { all, one, run, audit, getSettings } from '../lib/db.js';
 import { V, bad, todayStr, schoolYearOf, HttpError, isDate, lastNameOf } from '../lib/util.js';
 import { hashTeacherPin } from '../lib/crypto.js';
 import { assertNotLocked, recordFailure, clearFailures } from '../lib/auth.js';
@@ -137,10 +137,12 @@ add('GET', '/api/breaks/report', 'staff', async ({ env, url }) => {
        FROM break_log b JOIN students s ON s.student_id = b.student_id LEFT JOIN users u ON u.id = b.released_by
       WHERE ${W} ORDER BY b.id DESC LIMIT 2000`, ...args);
   const out_now = await all(env,
-    `SELECT b.id, b.student_id, s.last_name, s.first_name, s.grade, b.reason, b.left_at, u.name AS released_by
+    `SELECT b.id, b.student_id, s.last_name, s.first_name, s.grade, b.reason, b.left_at, u.name AS released_by,
+            (SELECT COUNT(*) FROM break_log x WHERE x.student_id = b.student_id AND x.break_date BETWEEN ? AND ?) AS trips
        FROM break_log b JOIN students s ON s.student_id = b.student_id LEFT JOIN users u ON u.id = b.released_by
-      WHERE b.status = 'out' ORDER BY b.left_at`);
-  return { from, to, totals, students, log, out_now, server_now: new Date().toISOString() };
+      WHERE b.status = 'out' ORDER BY b.left_at`, from, to);
+  const bands = (await getSettings(env)).break_bands;
+  return { from, to, totals, students, log, out_now, bands, server_now: new Date().toISOString() };
 });
 
 add('POST', '/api/breaks/:id/return', 'staff', async ({ env, params, actor }) => {

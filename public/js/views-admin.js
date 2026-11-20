@@ -281,13 +281,26 @@ async function settings(body, again) {
       <div><label for="t_s">Any step at or above</label><select id="t_s">${[1, 2, 3, 4, 5].map((n) => h`<option value="${n}" ${n === s.nonqual_min_step ? raw('selected') : ''}>Step ${n}</option>`)}</select></div>
       <div><label for="t_o">Or this many Step 1s</label><input type="number" id="t_o" min="2" max="20" value="${s.nonqual_step1_count}"></div>
     </div>
+    <h3 class="mt6">Restroom and water warnings</h3>
+    <p class="muted small">How many trips out of class (restroom plus water) each color covers. Each band starts where the last one ended. Black is everything above the red band.</p>
+    <div class="form-grid">
+      ${[['Green: up to', 0], ['Yellow: next', 1], ['Orange: next', 2], ['Red: next', 3]].map(([l, i]) => h`<div><label for="t_b${i}">${l}</label><input type="number" id="t_b${i}" min="1" max="500" value="${s.break_bands[i]}"></div>`)}
+    </div>
+    <div class="help" id="t_bhelp"></div>
     <label class="check"><input type="checkbox" id="t_neg" ${s.allow_negative_balance ? raw('checked') : ''}> A fine may take a student\u2019s P5 balance below zero</label>
     <div class="help">If this is off, a fine takes only as many points as the student has.</div>
     <div class="row mt14"><button class="btn primary" id="tsave">Save settings</button></div><div class="error-text" id="t_err"></div></div>`);
+  const bandHelp = () => {
+    const n = [0, 1, 2, 3].map((i) => Number($(`#t_b${i}`, body).value) || 0);
+    let t = 0; const r = n.map((x) => { const a = t + 1; t += x; return `${a}\u2013${t}`; });
+    $('#t_bhelp', body).textContent = `Green ${r[0].replace(/^1\u2013/, '0\u2013')}, yellow ${r[1]}, orange ${r[2]}, red ${r[3]}, black ${t + 1} and up.`;
+  };
+  [0, 1, 2, 3].forEach((i) => $(`#t_b${i}`, body).addEventListener('input', bandHelp));
+  bandHelp();
   $('#tsave', body).addEventListener('click', async () => {
     const v = (x) => $(x, body).value;
     try {
-      await api('/admin/settings', { method: 'PUT', body: { school_name: v('#t_n'), code_label: v('#t_c'), teacher_max_p5: Number(v('#t_m')), nonqual_min_step: Number(v('#t_s')), nonqual_step1_count: Number(v('#t_o')), allow_negative_balance: $('#t_neg', body).checked } });
+      await api('/admin/settings', { method: 'PUT', body: { school_name: v('#t_n'), code_label: v('#t_c'), teacher_max_p5: Number(v('#t_m')), nonqual_min_step: Number(v('#t_s')), nonqual_step1_count: Number(v('#t_o')), allow_negative_balance: $('#t_neg', body).checked, break_bands: [0, 1, 2, 3].map((i) => Number(v(`#t_b${i}`))) } });
       toast('Settings saved. Reload the page to see the new school name.');
     } catch (e) { $('#t_err', body).textContent = e.message; }
   });
@@ -299,8 +312,8 @@ async function settings(body, again) {
 async function users(body, again) {
   const { users: list } = await api('/admin/users');
   mount(body, h`<div class="card"><div class="row end mb10"><button class="btn primary" id="nu">Add staff account</button></div>
-    <div class="table-wrap"><table><thead><tr><th>Name (last, first)</th><th>Email</th><th>Role</th><th>Status</th><th></th></tr></thead><tbody>
-    ${list.map((u) => h`<tr><td>${lastFirst(u.name, u.last_name)}</td><td>${u.email}</td><td>${u.role}</td><td><span class="chip ${u.active ? 'ok' : 'gray'}">${u.active ? 'Active' : 'Inactive'}</span></td><td><button class="btn small" data-e="${u.id}">Edit</button></td></tr>`)}</tbody></table></div>
+    <div class="table-wrap"><table><thead><tr><th>Name (last, first)</th><th>Email</th><th>Role</th><th>Classification</th><th>Status</th><th></th></tr></thead><tbody>
+    ${list.map((u) => h`<tr><td>${lastFirst(u.name, u.last_name)}</td><td>${u.email}</td><td>${u.role}</td><td>${u.classification === 'office' ? 'Office' : 'Teacher'}</td><td><span class="chip ${u.active ? 'ok' : 'gray'}">${u.active ? 'Active' : 'Inactive'}</span></td><td><button class="btn small" data-e="${u.id}">Edit</button></td></tr>`)}</tbody></table></div>
     <div class="help">Teachers can record steps, award and fine P5, run the store, and manage their own Rewards Day activities. Admins can also change settings, import data, and manage accounts. Passwords need at least 12 characters.</div></div>`);
   const form = (u) => {
     const m = modal(u ? 'Edit staff account' : 'Add staff account', h`<div class="form-grid">
@@ -308,13 +321,14 @@ async function users(body, again) {
       <div><label for="u_l">Last name</label><input type="text" id="u_l" value="${u ? u.last_name || '' : ''}" maxlength="38" autocomplete="off"></div>
       <div><label for="u_e">Email</label><input type="email" id="u_e" value="${u ? u.email : ''}" ${u ? raw('disabled') : ''} maxlength="120"></div>
       <div><label for="u_r">Role</label><select id="u_r"><option value="teacher" ${u && u.role === 'teacher' ? raw('selected') : ''}>Teacher</option><option value="admin" ${u && u.role === 'admin' ? raw('selected') : ''}>Admin</option></select></div>
+      <div><label for="u_c">Classification</label><select id="u_c"><option value="teacher" ${!u || u.classification !== 'office' ? raw('selected') : ''}>Teacher</option><option value="office" ${u && u.classification === 'office' ? raw('selected') : ''}>Office</option></select></div>
       <div><label for="u_p">${u ? 'New password (leave blank to keep)' : 'Password'}</label><input type="password" id="u_p" autocomplete="new-password" minlength="12"></div></div>
       ${u ? h`<label class="check"><input type="checkbox" id="u_a" ${u.active ? raw('checked') : ''}> Active</label>` : ''}
       <div class="row end mt14"><button class="btn" data-x>Cancel</button><button class="btn primary" data-s>Save</button></div><div class="error-text" id="u_err"></div>`);
     $('[data-x]', m.el).addEventListener('click', m.close);
     $('[data-s]', m.el).addEventListener('click', async () => {
       const v = (x) => $(x, m.el).value;
-      const payload = { first_name: v('#u_f'), last_name: v('#u_l'), role: v('#u_r') };
+      const payload = { first_name: v('#u_f'), last_name: v('#u_l'), role: v('#u_r'), classification: v('#u_c') };
       if (v('#u_p')) payload.password = v('#u_p');
       try {
         if (u) { payload.active = $('#u_a', m.el).checked; await api('/admin/users/' + u.id, { method: 'PATCH', body: payload }); }

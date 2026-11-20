@@ -31,7 +31,7 @@ export async function p5(el) {
           <button type="button" class="btn small" id="addhr">Add group</button></div>` : ''}
       </div>
 
-      <div class="field"><label>What is it for?</label>
+      <div class="field"><label>P5 Category</label>
         <div class="cat-btns" id="cats" role="group" aria-label="P5 category">${cats.map((c) => h`<button type="button" class="cat-btn cat-${c.id}" data-cat="${c.id}" aria-pressed="false"><span class="em">${c.emoji}</span>${c.name}</button>`)}</div></div>
 
       <div class="field"><label for="amt">Amount</label>
@@ -40,7 +40,7 @@ export async function p5(el) {
         <div class="help">${me.user.role === 'admin' ? 'Admins can give up to 1,000 points at a time.' : `You can give up to ${maxAmt} points per entry.`}</div></div>
 
       <div class="form-grid">
-        <div><label for="note">Note (optional)</label><input type="text" id="note" maxlength="200" placeholder="Why?"></div>
+        <div><label for="note">What is it for (optional)</label><input type="text" id="note" maxlength="200" placeholder="Why?"></div>
         <div><label for="pd">Date</label><input type="date" id="pd" value="${me.today}"></div>
       </div>
 

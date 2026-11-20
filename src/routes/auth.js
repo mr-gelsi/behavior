@@ -98,7 +98,7 @@ add('GET', '/api/me', 'any', async ({ env, session, user, student }) => {
   for (const r of await all(env, 'SELECT DISTINCT school_year AS y FROM reward_periods')) years.add(r.y);
   return {
     type: 'staff',
-    user: { name: user.name, email: user.email, role: user.role },
+    user: { name: user.name, email: user.email, role: user.role, classification: user.classification || 'teacher' },
     settings: {
       school_name: settings.school_name,
       code_label: settings.code_label,

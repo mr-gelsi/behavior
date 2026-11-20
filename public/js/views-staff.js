@@ -133,7 +133,10 @@ export async function record(el) {
         <div><label for="sd">Date</label><input type="date" id="sd" value="${me.today}"></div>
         <div><label for="st">Teacher</label><input type="text" id="st" value="${me.user.name}" maxlength="80"></div>
         <div><label for="sp">Period (optional)</label><select id="sp">${PERIODS.map((p) => h`<option value="${p}">${p || 'None'}</option>`)}</select></div>
-        <div><label for="sn">Notes (optional)</label><input type="text" id="sn" maxlength="300" placeholder="What happened?"></div>
+        <div><label for="sn">Notes (optional)</label><input type="text" id="sn" maxlength="300" placeholder="What happened?">
+          <div class="quick-reasons mt8" role="group" aria-label="Quick reasons"><span class="muted small">Quick:</span>
+            <button type="button" class="btn small" data-qr="Gum" aria-pressed="false">🍬 Gum</button>
+            <button type="button" class="btn small" data-qr="Cell phone violation" aria-pressed="false">📱 Cell phone</button></div></div>
       </div>
       <div class="row"><button class="btn primary" id="save">Save step</button><span class="error-text" id="err" role="alert"></span></div>
     </div>
@@ -152,6 +155,14 @@ export async function record(el) {
 
   let level = null;
   const err = $('#err', el);
+  $$('[data-qr]', el).forEach((b) => b.addEventListener('click', () => {
+    const box = $('#sn', el);
+    const on = b.getAttribute('aria-pressed') === 'true';
+    $$('[data-qr]', el).forEach((x) => x.setAttribute('aria-pressed', 'false'));
+    if (on) { box.value = ''; return; }
+    b.setAttribute('aria-pressed', 'true');
+    box.value = b.dataset.qr;
+  }));
   $$('#stepbtns button', el).forEach((b) => b.addEventListener('click', () => {
     level = Number(b.dataset.step);
     $$('#stepbtns button', el).forEach((x) => x.setAttribute('aria-pressed', String(x === b)));

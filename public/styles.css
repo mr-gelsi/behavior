@@ -777,3 +777,17 @@ dialog::backdrop { background: rgba(10, 12, 16, .7); }
 .job-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
 .job-card h3 { margin: 0 0 4px; }
 .job-card .btn { margin-top: 6px; }
+
+/* Restroom / water warning bands */
+.bk-green { color: #15803d; font-weight: 800; }
+.bk-yellow { color: #b8860b; font-weight: 800; }
+.bk-orange { color: #ea580c; font-weight: 800; }
+.bk-red { color: #dc2626; font-weight: 800; }
+.bk-black { color: #000; font-weight: 900; }
+.chip.bkchip-yellow { background: #fff3bf; color: #7a5a00; }
+.chip.bkchip-orange { background: #ffe0cc; color: #a33a00; }
+.chip.bkchip-red { background: #ffd6d6; color: #a30f0f; }
+.chip.bkchip-black { background: #000; color: #fff; }
+.bk-legend span { margin-left: 12px; }
+.quick-reasons { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.quick-reasons .btn[aria-pressed=true] { background: var(--brand, #c8102e); color: #fff; }

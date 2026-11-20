@@ -17,6 +17,23 @@ const clock = (sec) => {
   const hrs = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
   return `${hrs ? hrs + ':' : ''}${String(m).padStart(hrs ? 2 : 2, '0')}:${String(s).padStart(2, '0')}`;
 };
+// Restroom/water warning bands. bands = [15,13,11,8] means green up to 15 trips, yellow the next 13 (to 28), orange the next 11 (to 39),
+// red the next 8 (to 47), and black above that.
+const BAND_NAMES = ['green', 'yellow', 'orange', 'red', 'black'];
+const BAND_WORDS = ['', 'Watch', 'Warning', 'High', 'Over limit'];
+export function bandInfo(count, bands) {
+  let top = 0; const ranges = [];
+  bands.forEach((n, i) => { ranges.push([top + 1, top + n]); top += n; });
+  let lvl = 4;
+  for (let i = 0; i < bands.length; i++) if (count <= ranges[i][1]) { lvl = i; break; }
+  return { lvl, name: BAND_NAMES[lvl], word: BAND_WORDS[lvl], ranges };
+}
+const bandCount = (count, bands) => { const b = bandInfo(count, bands); return h`<strong class="bk-${b.name}">${count}</strong>${b.word ? h` <span class="chip bkchip-${b.name}">${b.word}</span>` : ''}`; };
+const bandLegend = (bands) => {
+  const r = bandInfo(0, bands).ranges;
+  const txt = [`0\u2013${r[0][1]}`, `${r[1][0]}\u2013${r[1][1]}`, `${r[2][0]}\u2013${r[2][1]}`, `${r[3][0]}\u2013${r[3][1]}`, `${r[3][1] + 1}+`];
+  return h`<p class="muted small bk-legend">Trips per student in this date range: ${BAND_NAMES.map((n, i) => h`<span class="bk-${n}">${txt[i]}</span>`)}</p>`;
+};
 const timeOnly = (iso) => (iso ? new Date(iso).toLocaleTimeString(undefined, { hour: 'numeric', minute: '2-digit' }) : '');
 
 // ---------------------------------------------------------------------------------------
@@ -142,9 +159,9 @@ export async function breaksStaff(el) {
         </tbody></table></div></div>` : ''}
 
       ${data.out_now.length ? h`<div class="card out-card"><h2>${icon('timer', 20)} <span class="ml6">Out of class right now (${data.out_now.length})</span></h2>
-        <div class="table-wrap"><table><thead><tr><th>Student</th><th>Grade</th><th>Reason</th><th>Left</th><th>Out for</th><th>Released by</th><th></th></tr></thead><tbody>
+        <div class="table-wrap"><table><thead><tr><th>Student</th><th>Grade</th><th>Reason</th><th>Left</th><th>Out for</th><th>Released by</th><th class="num">Trips</th><th></th></tr></thead><tbody>
         ${data.out_now.map((o) => h`<tr><td>${o.last_name}, ${o.first_name}</td><td>${o.grade}</td><td>${REASON[o.reason]}</td><td class="nowrap">${timeOnly(o.left_at)}</td>
-          <td class="nowrap"><strong data-since="${o.left_at}">${fmtDur((Date.now() + skew() - Date.parse(o.left_at)) / 1000)}</strong></td><td>${o.released_by || ''}</td>
+          <td class="nowrap"><strong data-since="${o.left_at}">${fmtDur((Date.now() + skew() - Date.parse(o.left_at)) / 1000)}</strong></td><td>${o.released_by || ''}</td><td class="num">${bandCount(o.trips, data.bands)}</td>
           <td class="right"><button class="btn small" data-back="${o.id}" type="button">Mark back</button></td></tr>`)}
         </tbody></table></div></div>` : ''}
 
@@ -166,13 +183,13 @@ export async function breaksStaff(el) {
       </div>
 
       <div class="tabs" role="tablist"><button role="tab" data-v="students" aria-selected="${view === 'students'}">By student</button><button role="tab" data-v="log" aria-selected="${view === 'log'}">Every break</button></div>
-      <div class="card">${view === 'students' ? byStudent() : logTable()}</div>`);
+      <div class="card">${bandLegend(data.bands)}${view === 'students' ? byStudent() : logTable()}</div>`);
     wire();
   };
 
   const skew = () => Date.parse(data.server_now) - Date.now();
   const byStudent = () => data.students.length ? h`<div class="table-wrap"><table><thead><tr><th>Student</th><th>Grade</th><th class="num">Breaks</th><th class="num">Restroom</th><th class="num">Water</th><th class="num">Total time out</th><th class="num">Average</th><th>Last left</th></tr></thead><tbody>
-      ${data.students.map((s) => h`<tr><td>${s.last_name}, ${s.first_name}</td><td>${s.grade}</td><td class="num"><strong>${s.breaks}</strong></td><td class="num">${s.restroom}</td><td class="num">${s.water}</td>
+      ${data.students.map((s) => h`<tr><td>${s.last_name}, ${s.first_name}</td><td>${s.grade}</td><td class="num">${bandCount(s.breaks, data.bands)}</td><td class="num">${s.restroom}</td><td class="num">${s.water}</td>
         <td class="num">${fmtDur(s.seconds)}</td><td class="num">${s.finished ? fmtDur(s.seconds / s.finished) : ''}</td><td class="nowrap">${fmtDT(s.last_left)}</td></tr>`)}</tbody></table></div>`
     : h`<div class="empty"><strong>No breaks in this range</strong>When students leave for the restroom or water, they show up here.</div>`;
   const logTable = () => data.log.length ? h`<div class="table-wrap"><table><thead><tr><th>Date</th><th>Student</th><th>Grade</th><th>Reason</th><th>Left</th><th>Returned</th><th class="num">Time out</th><th>Released by</th></tr></thead><tbody>
