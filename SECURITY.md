@@ -72,3 +72,10 @@ Student passwords are stored with the same slow, salted, secret-keyed hash as st
 - Charger check-outs use the same teacher PINs and the same protections as the break tracker (5 wrong tries per student and 40 per network address in 15 minutes; separate counters so one cannot lock the other). Times and the approving teacher are written by the server.
 - Class jobs: only the class owner (or an Admin) can post jobs and hire. A student can only see and apply to jobs in a class they have joined. Pay runs on the server only; each (hire, week) pays once, enforced by the database.
 - Student leaders can see and fulfil School Store orders and nothing else. Only an Admin can grant the checkbox, and the server checks it on every request.
+
+## Parent contact information
+
+- Parent names and emails are stored in the database and returned only to signed-in staff (Admin for editing; the letter pages for teachers and Office staff). Students and student leaders never receive them.
+- The site does not send email. Letters are drafts that a staff member copies or opens in their own email program, so nothing leaves the school's systems without a person sending it.
+- "Do not email" families show a warning and the email button is disabled. Restroom-exempt students never appear in the restroom report. Step notes are excluded from letters unless the teacher ticks the box.
+- Check your district's rules before storing parent emails here; many schools can export them from their student information system.

@@ -131,7 +131,7 @@ add('GET', '/api/admin/students', 'admin', async ({ env, url }) => {
   const inactive = url.searchParams.get('inactive') === '1';
   return {
     students: await all(env,
-      `SELECT student_id, last_name, first_name, grade, homeroom_teacher, room, active, leadership, (pin_hash IS NOT NULL) AS has_pin
+      `SELECT student_id, last_name, first_name, grade, homeroom_teacher, room, active, leadership, guardian_name, guardian_email, guardian_email2, no_email, restroom_exempt, (pin_hash IS NOT NULL) AS has_pin
          FROM students WHERE (? = 1 OR active = 1) AND (? = '%%' OR CAST(student_id AS TEXT) LIKE ? ESCAPE '\\' OR last_name LIKE ? ESCAPE '\\' OR first_name LIKE ? ESCAPE '\\')
         ORDER BY last_name, first_name LIMIT 200`, inactive ? 1 : 0, like, like, like, like),
     counts: await all(env, 'SELECT grade, COUNT(*) AS n, SUM(pin_hash IS NOT NULL) AS with_pin FROM students WHERE active = 1 GROUP BY grade ORDER BY grade'),
@@ -143,17 +143,29 @@ add('PATCH', '/api/admin/students/:id', 'admin', async (c) => {
   const s = await one(c.env, 'SELECT * FROM students WHERE student_id = ?', id);
   if (!s) throw new HttpError(404, 'Student not found.');
   const b = c.body;
-  await run(c.env, 'UPDATE students SET last_name=?, first_name=?, grade=?, homeroom_teacher=?, room=?, active=?, leadership=? WHERE student_id=?',
+  await run(c.env, 'UPDATE students SET last_name=?, first_name=?, grade=?, homeroom_teacher=?, room=?, active=?, leadership=?, guardian_name=?, guardian_email=?, guardian_email2=?, no_email=?, restroom_exempt=? WHERE student_id=?',
     V.str(b.last_name ?? s.last_name, 'Last name', { max: 60 }),
     V.str(b.first_name ?? s.first_name, 'First name', { max: 60 }),
     V.int(b.grade ?? s.grade, 'Grade', { min: 6, max: 8 }),
     V.str(b.homeroom_teacher === undefined ? s.homeroom_teacher : b.homeroom_teacher, 'Homeroom teacher', { max: 80, optional: true }),
     V.str(b.room === undefined ? s.room : b.room, 'Room', { max: 20, optional: true }),
-    (b.active ?? s.active) ? 1 : 0, (b.leadership ?? s.leadership) ? 1 : 0, id);
+    (b.active ?? s.active) ? 1 : 0, (b.leadership ?? s.leadership) ? 1 : 0,
+    V.str(b.guardian_name === undefined ? s.guardian_name : b.guardian_name, 'Parent/guardian name', { max: 100, optional: true }),
+    optEmail(b.guardian_email === undefined ? s.guardian_email : b.guardian_email, 'Parent email'),
+    optEmail(b.guardian_email2 === undefined ? s.guardian_email2 : b.guardian_email2, 'Second parent email'),
+    (b.no_email ?? s.no_email) ? 1 : 0, (b.restroom_exempt ?? s.restroom_exempt) ? 1 : 0, id);
   if (b.active === false || b.active === 0) await endAllSessions(c.env, 'student', id);
   await audit(c.env, c.actor, 'student.update', `id=${id}${b.leadership !== undefined ? ' leadership=' + (b.leadership ? 1 : 0) : ''}`);
   return { ok: true };
 });
+
+function optEmail(v, label) {
+  const e = V.str(v, label, { max: 120, optional: true });
+  if (e === null || e === undefined || e === '') return null;
+  const x = String(e).trim().toLowerCase();
+  if (!/^[^@\s,;]+@[^@\s,;]+\.[^@\s,;]+$/.test(x)) throw bad(`${label} does not look like an email address.`);
+  return x;
+}
 
 function normRosterRow(r, i) {
   try {
@@ -166,6 +178,9 @@ function normRosterRow(r, i) {
         grade: V.int(r.grade, 'Grade', { min: 6, max: 8 }),
         homeroom_teacher: V.str(r.homeroom_teacher, 'Homeroom teacher', { max: 80, optional: true }),
         room: V.str(r.room, 'Room', { max: 20, optional: true }),
+        guardian_name: V.str(r.guardian_name, 'Parent name', { max: 100, optional: true }),
+        guardian_email: optEmail(r.guardian_email, 'Parent email'),
+        guardian_email2: optEmail(r.guardian_email2, 'Second parent email'),
       },
     };
   } catch (e) {
@@ -194,11 +209,14 @@ add('POST', '/api/admin/students/import', 'admin', async (c) => {
   if (body.dry_run) return { dry_run: true, ...summary };
   if (errors.length) throw bad('Fix the errors in the file before importing.', { ...summary });
   const stmts = good.map((r) => st(env,
-    `INSERT INTO students (student_id, last_name, first_name, grade, homeroom_teacher, room) VALUES (?,?,?,?,?,?)
+    `INSERT INTO students (student_id, last_name, first_name, grade, homeroom_teacher, room, guardian_name, guardian_email, guardian_email2) VALUES (?,?,?,?,?,?,?,?,?)
      ON CONFLICT(student_id) DO UPDATE SET last_name = excluded.last_name, first_name = excluded.first_name, grade = excluded.grade,
        homeroom_teacher = COALESCE(excluded.homeroom_teacher, students.homeroom_teacher),
-       room = COALESCE(excluded.room, students.room), active = 1`,
-    r.student_id, r.last_name, r.first_name, r.grade, r.homeroom_teacher, r.room));
+       room = COALESCE(excluded.room, students.room), active = 1,
+       guardian_name = COALESCE(excluded.guardian_name, students.guardian_name),
+       guardian_email = COALESCE(excluded.guardian_email, students.guardian_email),
+       guardian_email2 = COALESCE(excluded.guardian_email2, students.guardian_email2)`,
+    r.student_id, r.last_name, r.first_name, r.grade, r.homeroom_teacher, r.room, r.guardian_name, r.guardian_email, r.guardian_email2));
   await chunked(env, stmts, 40);
   let deactivated = 0;
   if (body.deactivate_missing) {

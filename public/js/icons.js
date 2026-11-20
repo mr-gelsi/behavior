@@ -32,6 +32,7 @@ const P = {
   print: '<path d="M7 9V3h10v6"/><rect x="3" y="9" width="18" height="8" rx="2"/><path d="M7 14h10v7H7z"/>',
   lock: '<rect x="4.5" y="10.5" width="15" height="10.5" rx="2.2"/><path d="M8 10.5V7.5a4 4 0 0 1 8 0v3"/>',
   users: '<circle cx="9" cy="8" r="3.5"/><path d="M2.5 20.5v-1.2A5 5 0 0 1 7.5 14.5h3a5 5 0 0 1 5 4.8v1.2"/><path d="M16 4.7a3.5 3.5 0 0 1 0 6.6M18 14.8a5 5 0 0 1 3.5 4.5v1.2"/>',
+  mail: '<rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3.5 7 8.5 6.5L20.5 7"/>',
   laptop: '<rect x="4.5" y="5" width="15" height="10.5" rx="1.8"/><path d="M2 19h20"/>',
   plug: '<path d="M9 3v5M15 3v5"/><path d="M6.5 8h11v3.5a5.5 5.5 0 0 1-11 0z"/><path d="M12 17v4"/>',
   briefcase: '<rect x="3" y="7" width="18" height="13" rx="2"/><path d="M9 7V5.5A1.5 1.5 0 0 1 10.5 4h3A1.5 1.5 0 0 1 15 5.5V7M3 13h18"/>',

@@ -47,7 +47,7 @@ You need a free **GitHub** account and a **Cloudflare** account. Turn on two-fac
 
 ### Step 2: Create the database
 
-> Run **all five** files in `migrations/` (`0001` to `0011`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
+> Run **all five** files in `migrations/` (`0001` to `0012`), in that order. The files contain no comments, so they paste cleanly into the D1 Console even though it joins everything onto one line.
 
 1. In the Cloudflare dashboard, open **Storage & databases → D1** and click **Create database**. Name it exactly `behavior-tracker`.
 2. Copy its **Database ID**.
@@ -188,7 +188,7 @@ npm install
 cp .dev.vars.example .dev.vars     # then edit the two values
 npm run db:migrate:local
 npm run dev                        # opens http://localhost:8787
-npm test                           # 512 automated checks
+npm test                           # 543 automated checks
 ```
 
 Use Chrome or Firefox locally. Safari refuses sign-in cookies on plain `http://localhost`.
@@ -243,3 +243,12 @@ There is also a demo server with **fake** students for trying every screen: `nod
 - **Edit the bands:** Admin > Settings > Restroom and water warnings. Enter how many trips each of green, yellow, orange and red covers; the page shows the resulting ranges.
 - **Record Steps:** quick **Gum** and **Cell phone** buttons fill the Notes box (press again to clear).
 - **P5 awards and fines:** "What is it for?" is now **P5 Category**, and "Note" is now **What is it for (optional)**.
+
+## New: parent contacts and weekly parent letters
+
+**One more migration:** run `migrations/0012_parent_contacts_reports.sql` once (console copy: `0012_parent_contacts_reports_console.sql`). The full set is now `0001` to `0012`.
+
+- **Parent contact info (Admin):** in Admin > Roster > Edit, each student has *Parent/guardian name*, *Primary contact email*, an optional *Second email*, **Do not email this family**, and **Exempt from restroom / water letters** (no reason is stored). The roster CSV can also include `Parent Name, Parent Email, Parent Email 2` columns; blank cells keep what is already saved.
+- **Parent Letters (menu):** drafts only. The site never sends email. Each letter opens in a window where you can edit the subject and message, **Copy** it, **Open in email app** (fills in your own mail program), and **Mark as sent**. A "Download for mail merge" CSV is also available. Edit the wording under "Edit the letter template" (saved on that computer; Reset restores the default).
+- **Behavior steps letter (every teacher):** pick a week (Monday to Sunday) and a minimum number of steps (default 2). The list shows your students who got that many steps from you that week. Step dates, levels and notes are **left out by default**; two checkboxes add dates/levels, and notes separately. Admins can run it for any teacher. "Sent" is remembered per teacher, per week.
+- **Restroom / water letter (Office staff and Admins only):** counts every trip out of class this school year from all teachers. A student appears when they reach a new warning level (yellow, orange, red or black, using the bands in Admin > Settings). After you mark a letter sent, the student returns only when they move up another level. Exempt students are left out. Teachers cannot see this tab or its data.

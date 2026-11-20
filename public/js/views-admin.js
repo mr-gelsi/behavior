@@ -37,7 +37,7 @@ async function roster(body, again) {
     </div>
 
     <div class="card"><h2>Import the roster</h2>
-      <p class="muted">A CSV with the columns <strong>Student ID, Last Name, First Name, GD</strong> (grade 6\u20138). Optional: <strong>Homeroom Teacher, Room</strong> (needed for the Reward Day report). In Excel, use File \u2192 Save As \u2192 CSV. Re-importing updates existing students and never deletes steps or points.</p>
+      <p class="muted">A CSV with the columns <strong>Student ID, Last Name, First Name, GD</strong> (grade 6\u20138). Optional: <strong>Homeroom Teacher, Room</strong> (needed for the Reward Day report) and <strong>Parent Name, Parent Email, Parent Email 2</strong> (for parent letters; blank cells keep what is already saved). In Excel, use File \u2192 Save As \u2192 CSV. Re-importing updates existing students and never deletes steps or points.</p>
       <div class="field"><label for="rf">CSV file</label><input type="file" id="rf" accept=".csv,.txt,text/csv"></div>
       <label class="check mb12"><input type="checkbox" id="deact"> Make students who are <em>not</em> in this file inactive (use for a new school year)</label>
       <div id="rprev"></div></div>
@@ -63,12 +63,13 @@ async function roster(body, again) {
       const hasHeader = !/^\d+$/.test(String(rows[0][0]).trim());
       const find = (...names) => hdr.findIndex((x) => names.includes(x));
       const idx = hasHeader
-        ? { id: find('studentid', 'id', 'studentnumber'), last: find('lastname', 'last'), first: find('firstname', 'first'), grade: find('gd', 'grade', 'gradelevel'), hr: find('homeroomteacher', 'homeroom', 'teacher'), room: find('room', 'roomnumber') }
+        ? { id: find('studentid', 'id', 'studentnumber'), last: find('lastname', 'last'), first: find('firstname', 'first'), grade: find('gd', 'grade', 'gradelevel'), hr: find('homeroomteacher', 'homeroom', 'teacher'), room: find('room', 'roomnumber'), pn: find('parentname', 'guardianname', 'parentguardian', 'parentguardianname', 'parent', 'guardian'), pe: find('parentemail', 'guardianemail', 'parentemail1', 'primaryemail', 'primarycontactemail', 'parentguardianemail'), pe2: find('parentemail2', 'guardianemail2', 'secondaryemail', 'secondparentemail') }
         : { id: 0, last: 1, first: 2, grade: 3, hr: 4, room: 5 };
       if (idx.id < 0 || idx.last < 0 || idx.first < 0 || idx.grade < 0) throw new Error('Couldn\u2019t find the columns Student ID, Last Name, First Name, and GD (grade) in the first row.');
       const data = rows.slice(hasHeader ? 1 : 0).map((r) => ({
         student_id: r[idx.id], last_name: r[idx.last], first_name: r[idx.first], grade: r[idx.grade],
         homeroom_teacher: idx.hr >= 0 ? r[idx.hr] : null, room: idx.room >= 0 ? r[idx.room] : null,
+        guardian_name: idx.pn >= 0 ? r[idx.pn] : null, guardian_email: idx.pe >= 0 ? r[idx.pe] : null, guardian_email2: idx.pe2 >= 0 ? r[idx.pe2] : null,
       }));
       const prev = await api('/admin/students/import', { method: 'POST', body: { rows: data, dry_run: true } });
       mount($('#rprev', body), h`<div class="banner ${prev.error_count ? 'danger' : 'info'}">
@@ -146,6 +147,14 @@ function editStudent(s, done) {
       <div><label for="s_h">Homeroom teacher</label><input type="text" id="s_h" value="${s.homeroom_teacher || ''}" maxlength="80"></div>
       <div><label for="s_r">Room</label><input type="text" id="s_r" value="${s.room || ''}" maxlength="20"></div>
     </div>
+    <h3 class="mt6">Parent / guardian contact</h3>
+    <div class="form-grid">
+      <div><label for="s_pn">Parent/guardian name</label><input type="text" id="s_pn" value="${s.guardian_name || ''}" maxlength="100"></div>
+      <div><label for="s_pe">Primary contact email</label><input type="email" id="s_pe" value="${s.guardian_email || ''}" maxlength="120"></div>
+      <div><label for="s_pe2">Second email (optional)</label><input type="email" id="s_pe2" value="${s.guardian_email2 || ''}" maxlength="120"></div>
+    </div>
+    <label class="check"><input type="checkbox" id="s_ne" ${s.no_email ? raw('checked') : ''}> Do not email this family</label>
+    <label class="check"><input type="checkbox" id="s_rx" ${s.restroom_exempt ? raw('checked') : ''}> Exempt from restroom / water letters (no reason is stored)</label>
     <label class="check"><input type="checkbox" id="s_a" ${s.active ? raw('checked') : ''}> Active (shows in lists and can sign in)</label>
     <label class="check"><input type="checkbox" id="s_lead" ${s.leadership ? raw('checked') : ''}> Student leadership (adds a Store orders tab to their bank page so they can help hand out P5 store orders)</label>
     <div class="row end mt14"><button class="btn" data-x>Cancel</button><button class="btn primary" data-s>Save</button></div><div class="error-text" id="s_err"></div>`);
@@ -153,7 +162,7 @@ function editStudent(s, done) {
   $('[data-s]', m.el).addEventListener('click', async () => {
     const v = (x) => $(x, m.el).value;
     try {
-      await api('/admin/students/' + s.student_id, { method: 'PATCH', body: { last_name: v('#s_l'), first_name: v('#s_f'), grade: Number(v('#s_g')), homeroom_teacher: v('#s_h') || null, room: v('#s_r') || null, active: $('#s_a', m.el).checked, leadership: $('#s_lead', m.el).checked } });
+      await api('/admin/students/' + s.student_id, { method: 'PATCH', body: { last_name: v('#s_l'), first_name: v('#s_f'), grade: Number(v('#s_g')), homeroom_teacher: v('#s_h') || null, room: v('#s_r') || null, active: $('#s_a', m.el).checked, leadership: $('#s_lead', m.el).checked, guardian_name: v('#s_pn') || null, guardian_email: v('#s_pe') || null, guardian_email2: v('#s_pe2') || null, no_email: $('#s_ne', m.el).checked, restroom_exempt: $('#s_rx', m.el).checked } });
       m.close(); toast('Student updated.'); done();
     } catch (e) { $('#s_err', m.el).textContent = e.message; }
   });

@@ -7,6 +7,7 @@ import { studentHome, studentStore, studentSeat } from './views-student.js';
 import { icon } from './icons.js';
 import { breaksStaff, studentTimer, openBreakModal } from './views-breaks.js';
 import { classesList, classDetail, studentClasses } from './views-classes.js';
+import { parents } from './views-parents.js';
 import { studentEquipment, equipmentStaff, studentJobs, studentLeader } from './views-extras.js';
 
 const root = document.getElementById('root');
@@ -68,7 +69,7 @@ async function showLogin(message) {
 const STAFF_NAV = [
   ['dashboard', 'dashboard', 'Dashboard'], ['record', 'record', 'Record Steps'], ['reports', 'reports', 'Behavior Reports'],
   ['reward-report', 'gift', 'Reward Day Report'],
-  ['p5', 'star', 'P5 Points'], ['store', 'store', 'Store'], ['rewards', 'ticket', 'Rewards Day'], ['classes', 'classes', 'My Classes'], ['breaks', 'clock', 'Break Tracker'], ['equipment', 'laptop', 'Charger Log'],
+  ['p5', 'star', 'P5 Points'], ['store', 'store', 'Store'], ['rewards', 'ticket', 'Rewards Day'], ['classes', 'classes', 'My Classes'], ['breaks', 'clock', 'Break Tracker'], ['equipment', 'laptop', 'Charger Log'], ['parents', 'mail', 'Parent Letters'],
 ];
 const STUDENT_NAV = [['me', 'bank', 'My P5'], ['shop', 'store', 'Store'], ['seat', 'ticket', 'Reserve a Seat'], ['classes', 'key', 'My Classes'], ['equipment', 'plug', 'Chargers']];
 
@@ -208,7 +209,7 @@ function shell() {
 const STAFF_ROUTES = {
   dashboard: (el) => S.dashboard(el), record: (el) => S.record(el), monthly: (el) => S.monthly(el),
   'reward-report': (el) => S.rewardReport(el), p5: (el) => P.p5(el), store: (el) => P.storeStaff(el),
-  rewards: (el) => rewardsStaff(el), classes: (el) => classesList(el), breaks: (el) => breaksStaff(el), equipment: (el) => equipmentStaff(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
+  rewards: (el) => rewardsStaff(el), classes: (el) => classesList(el), breaks: (el) => breaksStaff(el), equipment: (el) => equipmentStaff(el), parents: (el) => parents(el), admin: (el) => admin(el), 'pin-sheet': (el) => pinSheet(el),
   password: (el) => passwordPage(el),
 };
 const STUDENT_ROUTES = { me: studentHome, shop: studentStore, seat: studentSeat, classes: studentClasses, equipment: studentEquipment, leader: studentLeader, timer: studentTimer };

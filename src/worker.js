@@ -17,6 +17,7 @@ import './routes/calendar.js';
 import './routes/equipment.js';
 import './routes/jobs.js';
 import './routes/leader.js';
+import './routes/parent_reports.js';
 import './routes/admin.js';
 
 const CSP = [
